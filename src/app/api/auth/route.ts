@@ -3,23 +3,29 @@ import { prisma } from '@/lib/prisma';
 import { createSessionToken, sessionCookie, verifyPassword } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
-  const body = await request.json();
-  const { email, password } = body;
+  try {
+    const body = await request.json();
+    const email = typeof body?.email === 'string' ? body.email.trim() : '';
+    const password = typeof body?.password === 'string' ? body.password : '';
 
-  if (!email || !password) {
-    return NextResponse.json({ error: 'Email y password requeridos' }, { status: 400 });
+    if (!email || !password) {
+      return NextResponse.json({ error: 'Email y password requeridos' }, { status: 400 });
+    }
+
+    const user = await prisma.user.findUnique({ where: { email } });
+
+    if (!user || !verifyPassword(password, user.passwordHash) || !user.isActive) {
+      return NextResponse.json({ error: 'Credenciales inválidas' }, { status: 401 });
+    }
+
+    const token = createSessionToken({ id: user.id, email: user.email, role: user.role });
+    const response = NextResponse.json({ id: user.id, email: user.email, role: user.role });
+    const cookie = sessionCookie(token);
+    response.cookies.set(cookie.name, cookie.value, cookie.options);
+
+    return response;
+  } catch (error) {
+    console.error('POST /api/auth failed', error);
+    return NextResponse.json({ error: 'Error interno en login' }, { status: 500 });
   }
-
-  const user = await prisma.user.findUnique({ where: { email } });
-
-  if (!user || !verifyPassword(password, user.passwordHash) || !user.isActive) {
-    return NextResponse.json({ error: 'Credenciales inválidas' }, { status: 401 });
-  }
-
-  const token = createSessionToken({ id: user.id, email: user.email, role: user.role });
-  const response = NextResponse.json({ id: user.id, email: user.email, role: user.role });
-  const cookie = sessionCookie(token);
-  response.cookies.set(cookie.name, cookie.value, cookie.options);
-
-  return response;
 }
