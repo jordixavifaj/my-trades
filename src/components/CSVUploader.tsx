@@ -41,21 +41,21 @@ export default function CSVUploader() {
       const result: UploadResponse = await response.json();
 
       if (response.ok && result.stats) {
-        const skippedText = result.stats.skippedRows ? `, skipped ${result.stats.skippedRows} invalid row(s)` : '';
+        const skippedText = result.stats.skippedRows ? `, ${result.stats.skippedRows} fila(s) inválidas omitidas` : '';
         setMessage(
-          `Success! Processed ${result.stats.totalFills} fills into ${result.stats.totalTrades} trades (${result.stats.closedTrades} closed, ${result.stats.openTrades} open${skippedText}).`,
+          `Importación completada: ${result.stats.totalFills} fills en ${result.stats.totalTrades} trades (${result.stats.closedTrades} cerrados, ${result.stats.openTrades} abiertos${skippedText}).`,
         );
         setMessageType('success');
       } else {
         const validationHint = result.validationErrors?.[0]
-          ? ` First issue: line ${result.validationErrors[0].line} - ${result.validationErrors[0].reason}.`
+          ? ` Primer error: línea ${result.validationErrors[0].line} - ${result.validationErrors[0].reason}.`
           : '';
 
         setMessage(`${result.error || 'Upload failed'}${validationHint}`);
         setMessageType('error');
       }
     } catch {
-      setMessage('Upload failed. Please try again.');
+      setMessage('No se pudo subir el archivo. Inténtalo de nuevo.');
       setMessageType('error');
     } finally {
       setUploading(false);
@@ -64,52 +64,42 @@ export default function CSVUploader() {
   };
 
   return (
-    <div className="max-w-md mx-auto p-6 bg-white rounded-lg shadow-md">
-      <h2 className="text-2xl font-bold mb-4 text-gray-800">Upload DAS Trader CSV</h2>
+    <div className="mx-auto w-full rounded-lg border border-slate-800 bg-slate-900 p-6 shadow-md">
+      <h2 className="mb-4 text-2xl font-bold text-slate-100">Importación DAS Trader</h2>
 
       <div className="mb-4">
-        <label htmlFor="csv-upload" className="block text-sm font-medium text-gray-700 mb-2">
-          Select CSV File
+        <label htmlFor="csv-upload" className="mb-2 block text-sm font-medium text-slate-300">
+          Selecciona CSV/XLS/XLSX
         </label>
         <input
           id="csv-upload"
           type="file"
-          accept=".csv,text/csv"
+          accept=".csv,.xls,.xlsx"
           onChange={handleFileUpload}
           disabled={uploading}
-          className="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 disabled:opacity-50"
+          className="block w-full text-sm text-slate-400 file:mr-4 file:rounded-full file:border-0 file:bg-cyan-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-cyan-100 hover:file:bg-cyan-800 disabled:opacity-50"
         />
       </div>
 
       {uploading && (
-        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-md">
-          <p className="text-sm text-blue-700">Processing CSV file...</p>
+        <div className="mb-4 rounded-md border border-cyan-700 bg-cyan-950 p-3">
+          <p className="text-sm text-cyan-200">Procesando archivo...</p>
         </div>
       )}
 
       {message && (
         <div
-          className={`mb-4 p-3 rounded-md border ${
+          className={`mb-4 rounded-md border p-3 ${
             messageType === 'success'
-              ? 'bg-green-50 border-green-200 text-green-700'
+              ? 'border-emerald-700 bg-emerald-950 text-emerald-300'
               : messageType === 'error'
-                ? 'bg-red-50 border-red-200 text-red-700'
-                : 'bg-blue-50 border-blue-200 text-blue-700'
+                ? 'border-rose-700 bg-rose-950 text-rose-300'
+                : 'border-cyan-700 bg-cyan-950 text-cyan-300'
           }`}
         >
           <p className="text-sm">{message}</p>
         </div>
       )}
-
-      <div className="mt-6 p-4 bg-gray-50 rounded-md">
-        <h3 className="text-sm font-semibold text-gray-700 mb-2">Instructions:</h3>
-        <ul className="text-xs text-gray-600 space-y-1">
-          <li>• Export your fills from DAS Trader as CSV</li>
-          <li>• The file must include: Symbol, Time/Date, Side, Price, Quantity (Commission optional)</li>
-          <li>• Invalid rows are skipped and reported after upload</li>
-          <li>• Trades are automatically saved to the database</li>
-        </ul>
-      </div>
     </div>
   );
 }

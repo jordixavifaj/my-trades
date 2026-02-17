@@ -3,6 +3,7 @@ import { prisma } from '@/lib/prisma';
 import { groupFillsIntoTrades, processDasTraderCSV } from '@/lib/csv-processor';
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
+const ALLOWED_EXTENSIONS = ['.csv', '.xls', '.xlsx'];
 
 export async function POST(request: NextRequest) {
   try {
@@ -29,24 +30,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!file.name.toLowerCase().endsWith('.csv')) {
-      return NextResponse.json({ error: 'File must have .csv extension' }, { status: 400 });
+    const lower = file.name.toLowerCase();
+    if (!ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext))) {
+      return NextResponse.json({ error: 'File must be CSV, XLS o XLSX' }, { status: 400 });
     }
 
-    const text = await file.text();
-    const lines = text.split(/\r?\n/);
 
+    if (lower.endsWith('.xls') || lower.endsWith('.xlsx')) {
+      return NextResponse.json(
+        { error: 'Formato XLS/XLSX detectado. Exporta a CSV para procesarlo con fidelidad DAS Trader.' },
+        { status: 400 },
+      );
+    }
+
+    const lines = await getFileLines(file);
     const { fills, errors } = processDasTraderCSV(lines);
 
     if (fills.length === 0) {
       return NextResponse.json(
-        { error: 'No valid fills found in CSV', validationErrors: errors.slice(0, 10) },
+        { error: 'No valid fills found in file', validationErrors: errors.slice(0, 10) },
         { status: 400 },
       );
     }
 
     const tradeGroups = groupFillsIntoTrades(fills);
-
     const savedTrades = await prisma.$transaction(
       tradeGroups.map((tradeGroup) => {
         const firstFill = tradeGroup.fills[0];
@@ -90,8 +97,16 @@ export async function POST(request: NextRequest) {
       }),
     );
 
+    await prisma.auditLog.create({
+      data: {
+        action: 'UPLOAD_TRADES',
+        reason: `Imported ${savedTrades.length} trades from ${file.name}`,
+        newValueJson: JSON.stringify({ fileName: file.name, trades: savedTrades.length, errors: errors.length }),
+      },
+    });
+
     return NextResponse.json({
-      message: 'CSV processed successfully',
+      message: 'Archivo procesado correctamente',
       stats: {
         totalFills: fills.length,
         totalTrades: tradeGroups.length,
@@ -103,13 +118,18 @@ export async function POST(request: NextRequest) {
       trades: savedTrades,
     });
   } catch (error) {
-    console.error('Error processing CSV:', error);
+    console.error('Error processing upload:', error);
 
     return NextResponse.json(
       {
-        error: 'Internal server error while processing CSV upload',
+        error: 'Internal server error while processing upload',
       },
       { status: 500 },
     );
   }
+}
+
+async function getFileLines(file: File) {
+  const text = await file.text();
+  return text.split(/\r?\n/);
 }

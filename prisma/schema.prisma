@@ -1,6 +1,3 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -10,8 +7,37 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Trade {
+model User {
+  id           String   @id @default(cuid())
+  name         String?
+  email        String   @unique
+  passwordHash String?
+  role         Role     @default(TRADER)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  trades       Trade[]
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+model Strategy {
   id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  trades      Trade[]
+
+  @@map("strategies")
+}
+
+model Trade {
+  id          String      @id @default(cuid())
+  userId      String?
+  strategyId  String?
   symbol      String
   status      TradeStatus @default(OPEN)
   openDate    DateTime
@@ -22,28 +48,50 @@ model Trade {
   side        Side
   pnl         Float?
   commission  Float
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
+  notes       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
   fills       Fill[]
-  
+  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  strategy    Strategy?   @relation(fields: [strategyId], references: [id], onDelete: SetNull)
+  auditLogs   AuditLog[]
+
+  @@index([symbol, openDate])
+  @@index([status, closeDate])
+  @@index([strategyId])
   @@map("trades")
 }
 
 model Fill {
-  id          String   @id @default(cuid())
-  tradeId     String
-  symbol      String
-  price       Float
-  quantity    Int
-  side        Side
-  timestamp   DateTime
-  commission  Float
-  createdAt   DateTime @default(now())
-  
-  trade       Trade @relation(fields: [tradeId], references: [id], onDelete: Cascade)
-  
+  id         String   @id @default(cuid())
+  tradeId    String
+  symbol     String
+  price      Float
+  quantity   Int
+  side       Side
+  timestamp  DateTime
+  commission Float
+  createdAt  DateTime @default(now())
+  trade      Trade    @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+
+  @@index([symbol, timestamp])
   @@map("fills")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId       String?
+  tradeId      String?
+  action       String
+  reason       String?
+  oldValueJson String?
+  newValueJson String?
+  createdAt    DateTime @default(now())
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  trade        Trade?   @relation(fields: [tradeId], references: [id], onDelete: SetNull)
+
+  @@index([tradeId, createdAt])
+  @@map("audit_logs")
 }
 
 enum TradeStatus {
@@ -54,4 +102,9 @@ enum TradeStatus {
 enum Side {
   BUY
   SELL
+}
+
+enum Role {
+  ADMIN
+  TRADER
 }
