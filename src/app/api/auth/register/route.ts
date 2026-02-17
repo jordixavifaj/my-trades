@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
-import { createSessionToken, hashPassword, sessionCookie } from '@/lib/auth';
+import { createSessionToken, hashPassword, sessionCookie, toSessionRole } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 
@@ -67,8 +67,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    const token = createSessionToken({ id: user.id, email: user.email, role: user.role });
-    const response = NextResponse.json({ id: user.id, email: user.email, role: user.role }, { status: 201 });
+    const token = createSessionToken({ id: user.id, email: user.email, role: toSessionRole(user.role) });
+    const response = NextResponse.json({ id: user.id, email: user.email, role: toSessionRole(user.role) }, { status: 201 });
     const cookie = sessionCookie(token);
     response.cookies.set(cookie.name, cookie.value, cookie.options);
 

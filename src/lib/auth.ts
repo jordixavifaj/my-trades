@@ -6,6 +6,11 @@ export type SessionUser = {
   role: 'ADMIN' | 'TRADER';
 };
 
+export function toSessionRole(role: string | null | undefined): SessionUser['role'] {
+  return role === 'ADMIN' ? 'ADMIN' : 'TRADER';
+}
+
+
 const COOKIE_NAME = 'mt_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 12;
 const PASSWORD_ITERATIONS = 120000;

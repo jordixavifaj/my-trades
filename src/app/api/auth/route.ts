@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { createSessionToken, sessionCookie, verifyPassword } from '@/lib/auth';
+import { createSessionToken, sessionCookie, toSessionRole, verifyPassword } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 
@@ -57,8 +57,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Credenciales inválidas' }, { status: 401 });
     }
 
-    const token = createSessionToken({ id: user.id, email: user.email, role: user.role });
-    const response = NextResponse.json({ id: user.id, email: user.email, role: user.role });
+    const token = createSessionToken({ id: user.id, email: user.email, role: toSessionRole(user.role) });
+    const response = NextResponse.json({ id: user.id, email: user.email, role: toSessionRole(user.role) });
     const cookie = sessionCookie(token);
     response.cookies.set(cookie.name, cookie.value, cookie.options);
 

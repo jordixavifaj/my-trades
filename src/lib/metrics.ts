@@ -1,5 +1,13 @@
 import { prisma } from '@/lib/prisma';
 
+function normalizeSide(side: string): 'BUY' | 'SELL' {
+  return side === 'SELL' ? 'SELL' : 'BUY';
+}
+
+function normalizeStatus(status: string): 'OPEN' | 'CLOSED' {
+  return status === 'CLOSED' ? 'CLOSED' : 'OPEN';
+}
+
 export async function getDashboardMetrics() {
   try {
     const trades = await prisma.trade.findMany({
@@ -44,11 +52,11 @@ export async function getDashboardMetrics() {
         id: trade.id,
         symbol: trade.symbol,
         pnl: (trade.pnl ?? 0) - trade.commission,
-        side: trade.side,
+        side: normalizeSide(trade.side),
         quantity: trade.quantity,
         openDate: trade.openDate.toISOString(),
         closeDate: trade.closeDate ? trade.closeDate.toISOString() : null,
-        status: trade.status,
+        status: normalizeStatus(trade.status),
       });
       return acc;
     }, {});
