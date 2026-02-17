@@ -1,7 +1,7 @@
 import { cookies } from 'next/headers';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { createSessionToken, sessionCookie } from '@/lib/auth';
+import { createSessionToken, sessionCookie, toSessionRole } from '@/lib/auth';
 
 type GoogleTokenResponse = { access_token: string; id_token?: string };
 type GoogleProfile = { email: string; name?: string };
@@ -60,7 +60,7 @@ export async function GET(request: NextRequest) {
     });
   }
 
-  const token = createSessionToken({ id: user.id, email: user.email, role: user.role });
+  const token = createSessionToken({ id: user.id, email: user.email, role: toSessionRole(user.role) });
   const response = NextResponse.redirect(new URL('/dashboard', request.url));
   const cookie = sessionCookie(token);
   response.cookies.set(cookie.name, cookie.value, cookie.options);

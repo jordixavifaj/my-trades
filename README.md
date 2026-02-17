@@ -1,6 +1,6 @@
 # My Trades
 
-Trading journal application built with Next.js 14, TypeScript, TailwindCSS, Prisma, and PostgreSQL.
+Trading journal application built with Next.js 14, TypeScript, TailwindCSS, Prisma, and SQLite (desarrollo) / PostgreSQL (producción).
 
 ## Production-ready updates included
 
@@ -17,7 +17,7 @@ Trading journal application built with Next.js 14, TypeScript, TailwindCSS, Pris
 ### Prerequisites
 
 - Node.js 18+ installed
-- PostgreSQL database running
+- SQLite (sin instalación extra) para desarrollo local o PostgreSQL para producción
 
 ### Installation
 
@@ -28,18 +28,20 @@ cp .env.example .env.local
 
 Set at least:
 
-- `DATABASE_URL`
+- `DATABASE_URL` (por defecto: `file:./dev.db`)
 - `AUTH_SECRET`
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 
-### Database setup
+### Database setup (SQLite recomendado en local)
 
 ```bash
 npx prisma generate
-npx prisma migrate dev
+npx prisma db push
 npm run seed
 ```
+
+> Si prefieres migraciones versionadas, puedes usar `npx prisma migrate dev`.
 
 ### Run
 
