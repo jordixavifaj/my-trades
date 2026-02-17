@@ -1,11 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma, User } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { createSessionToken, hashPassword, sessionCookie } from '@/lib/auth';
+
+export const runtime = 'nodejs';
+
+async function findUserByEmailInsensitive(email: string): Promise<User | null> {
+  const users = await prisma.$queryRaw<User[]>(Prisma.sql`
+    SELECT *
+    FROM users
+    WHERE LOWER(email) = LOWER(${email})
+    LIMIT 1
+  `);
+
+  return users[0] ?? null;
+}
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const email = typeof body?.email === 'string' ? body.email.trim() : '';
+    const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
     const password = typeof body?.password === 'string' ? body.password : '';
     const name = typeof body?.name === 'string' ? body.name.trim() : null;
 
@@ -13,7 +27,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Email y password son obligatorios' }, { status: 400 });
     }
 
-    const exists = await prisma.user.findUnique({ where: { email } });
+    if (password.length < 6) {
+      return NextResponse.json({ error: 'El password debe tener al menos 6 caracteres' }, { status: 400 });
+    }
+
+    const exists = await findUserByEmailInsensitive(email);
     if (exists) {
       return NextResponse.json({ error: 'El usuario ya existe' }, { status: 409 });
     }
@@ -35,6 +53,10 @@ export async function POST(request: NextRequest) {
 
     return response;
   } catch (error) {
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      return NextResponse.json({ error: 'El usuario ya existe' }, { status: 409 });
+    }
+
     console.error('POST /api/auth/register failed', error);
     return NextResponse.json({ error: 'Error interno al registrar usuario' }, { status: 500 });
   }

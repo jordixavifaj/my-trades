@@ -1,18 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma, User } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { createSessionToken, sessionCookie, verifyPassword } from '@/lib/auth';
+
+export const runtime = 'nodejs';
+
+async function findUserByEmailInsensitive(email: string): Promise<User | null> {
+  const users = await prisma.$queryRaw<User[]>(Prisma.sql`
+    SELECT *
+    FROM users
+    WHERE LOWER(email) = LOWER(${email})
+    LIMIT 1
+  `);
+
+  return users[0] ?? null;
+}
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const email = typeof body?.email === 'string' ? body.email.trim() : '';
+    const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
     const password = typeof body?.password === 'string' ? body.password : '';
 
     if (!email || !password) {
       return NextResponse.json({ error: 'Email y password requeridos' }, { status: 400 });
     }
 
-    const user = await prisma.user.findUnique({ where: { email } });
+    const user = await findUserByEmailInsensitive(email);
 
     if (!user || !verifyPassword(password, user.passwordHash) || !user.isActive) {
       return NextResponse.json({ error: 'Credenciales inválidas' }, { status: 401 });
