@@ -1,12 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { groupFillsIntoTrades, processDasTraderCSV } from '@/lib/csv-processor';
+import { authCookieName, verifySessionToken } from '@/lib/auth';
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = ['.csv', '.xls', '.xlsx'];
 
 export async function POST(request: NextRequest) {
   try {
+    const user = verifySessionToken(request.cookies.get(authCookieName)?.value);
+    if (!user) {
+      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
+    }
+
     const contentType = request.headers.get('content-type') ?? '';
     if (!contentType.includes('multipart/form-data')) {
       return NextResponse.json({ error: 'Content-Type must be multipart/form-data' }, { status: 415 });
@@ -99,6 +105,7 @@ export async function POST(request: NextRequest) {
 
     await prisma.auditLog.create({
       data: {
+        userId: user.id,
         action: 'UPLOAD_TRADES',
         reason: `Imported ${savedTrades.length} trades from ${file.name}`,
         newValueJson: JSON.stringify({ fileName: file.name, trades: savedTrades.length, errors: errors.length }),
