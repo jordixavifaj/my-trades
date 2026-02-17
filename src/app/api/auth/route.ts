@@ -4,11 +4,40 @@ import { createSessionToken, sessionCookie, verifyPassword } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 
+type Credentials = { email: string; password: string };
+
+async function readCredentials(request: NextRequest): Promise<Credentials> {
+  const contentType = request.headers.get('content-type') || '';
+
+  if (contentType.includes('application/json')) {
+    const body = await request.json().catch(() => null);
+    return {
+      email: typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '',
+      password: typeof body?.password === 'string' ? body.password : '',
+    };
+  }
+
+  if (
+    contentType.includes('application/x-www-form-urlencoded')
+    || contentType.includes('multipart/form-data')
+  ) {
+    const formData = await request.formData();
+    return {
+      email: typeof formData.get('email') === 'string' ? String(formData.get('email')).trim().toLowerCase() : '',
+      password: typeof formData.get('password') === 'string' ? String(formData.get('password')) : '',
+    };
+  }
+
+  const body = await request.json().catch(() => null);
+  return {
+    email: typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '',
+    password: typeof body?.password === 'string' ? body.password : '',
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
-    const password = typeof body?.password === 'string' ? body.password : '';
+    const { email, password } = await readCredentials(request);
 
     if (!email || !password) {
       return NextResponse.json({ error: 'Email y password requeridos' }, { status: 400 });
@@ -16,7 +45,15 @@ export async function POST(request: NextRequest) {
 
     const user = await prisma.user.findUnique({ where: { email } });
 
-    if (!user || !verifyPassword(password, user.passwordHash) || !user.isActive) {
+    if (!user || !user.isActive) {
+      return NextResponse.json({ error: 'Credenciales inválidas' }, { status: 401 });
+    }
+
+    if (!user.passwordHash) {
+      return NextResponse.json({ error: 'Esta cuenta no tiene password local. Inicia sesión con Google.' }, { status: 401 });
+    }
+
+    if (!verifyPassword(password, user.passwordHash)) {
       return NextResponse.json({ error: 'Credenciales inválidas' }, { status: 401 });
     }
 
