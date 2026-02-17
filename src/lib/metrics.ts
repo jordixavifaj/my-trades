@@ -36,6 +36,23 @@ export async function getDashboardMetrics() {
       equityCurve.push({ date: day, equity: Number(equity.toFixed(2)), drawdown: Number(drawdown.toFixed(2)) });
     }
 
+
+    const tradesByDay = trades.reduce<Record<string, Array<{ id: string; symbol: string; pnl: number; side: 'BUY' | 'SELL'; quantity: number; openDate: string; closeDate: string | null; status: 'OPEN' | 'CLOSED' }>>>((acc, trade) => {
+      const d = (trade.closeDate ?? trade.openDate).toISOString().slice(0, 10);
+      if (!acc[d]) acc[d] = [];
+      acc[d].push({
+        id: trade.id,
+        symbol: trade.symbol,
+        pnl: (trade.pnl ?? 0) - trade.commission,
+        side: trade.side,
+        quantity: trade.quantity,
+        openDate: trade.openDate.toISOString(),
+        closeDate: trade.closeDate ? trade.closeDate.toISOString() : null,
+        status: trade.status,
+      });
+      return acc;
+    }, {});
+
     const strategyPerformance = Array.from(
       trades
         .reduce((acc, trade) => {
@@ -65,6 +82,7 @@ export async function getDashboardMetrics() {
       equityCurve,
       strategyPerformance,
       recentTrades: trades.slice(-10).reverse(),
+      tradesByDay,
     };
   } catch {
     return {
@@ -74,6 +92,7 @@ export async function getDashboardMetrics() {
       equityCurve: [],
       strategyPerformance: [],
       recentTrades: [],
+      tradesByDay: {},
     };
   }
 }

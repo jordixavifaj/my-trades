@@ -35,7 +35,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Reco
 
   return (
     <AppShell>
-      <h1 className="mb-4 text-3xl font-bold">Reports</h1>
+      <h1 className="mb-4 text-3xl font-semibold tracking-tight">Reports</h1>
       <form className="mb-4 flex gap-2" method="get">
         <input className="rounded bg-slate-800 p-2" name="symbol" placeholder="Símbolo" defaultValue={symbol} />
         <select className="rounded bg-slate-800 p-2" name="status" defaultValue={status}>
@@ -45,7 +45,7 @@ export default async function ReportsPage({ searchParams }: { searchParams: Reco
         </select>
         <button className="rounded bg-cyan-700 px-3">Filtrar</button>
       </form>
-      <div className="rounded-lg border border-slate-800 bg-slate-900 p-4">
+      <div className="panel p-4">
         <p>Total de trades: {totalTrades}</p>
         <h3 className="mt-4 text-xl">Por estrategia</h3>
         <ul className="mt-2 space-y-2">
