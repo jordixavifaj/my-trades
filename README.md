@@ -1,6 +1,6 @@
 # My Trades
 
-Trading journal application built with Next.js 14, TypeScript, TailwindCSS, Prisma, and PostgreSQL.
+Trading journal application built with Next.js 14, TypeScript, TailwindCSS, Prisma, and PostgreSQL, including robust CSV validation for DAS Trader fills.
 
 ## Features
 
@@ -16,7 +16,7 @@ Trading journal application built with Next.js 14, TypeScript, TailwindCSS, Pris
 - **Styling**: TailwindCSS
 - **Database**: PostgreSQL
 - **ORM**: Prisma
-- **File Processing**: csv-parser
+- **File Processing**: Custom CSV parser with row-level validation
 
 ## Getting Started
 
@@ -113,6 +113,7 @@ The application expects DAS Trader CSV exports with the following columns:
 - `npm run build` - Build for production
 - `npm run start` - Start production server
 - `npm run lint` - Run ESLint
+- `npm run typecheck` - Run TypeScript type checks
 
 ### Database Commands
 
