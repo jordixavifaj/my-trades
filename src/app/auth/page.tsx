@@ -42,9 +42,16 @@ export default function AuthPage() {
         body: JSON.stringify(Object.fromEntries(formData.entries())),
       });
 
-      const result = await response.json().catch(() => ({ error: 'Respuesta inválida del servidor' }));
+      const contentType = response.headers.get('content-type') || '';
+      const result = contentType.includes('application/json')
+        ? await response.json().catch(() => null)
+        : null;
+
       if (!response.ok) {
-        setMessage(`Error: ${result.error ?? 'No se pudo completar la operación'}`);
+        const fallbackError = contentType.includes('text/html')
+          ? 'Error interno del servidor'
+          : 'No se pudo completar la operación';
+        setMessage(`Error: ${result?.error ?? fallbackError}`);
         return;
       }
 

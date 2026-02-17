@@ -74,9 +74,15 @@ export function verifySessionToken(token?: string | null): SessionUser | null {
 
   if (!isValidSignature) return null;
 
-  const payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8')) as SessionUser & { exp: number };
+  let payload: (SessionUser & { exp: number }) | null = null;
 
-  if (!payload.exp || payload.exp < Math.floor(Date.now() / 1000)) return null;
+  try {
+    payload = JSON.parse(Buffer.from(encodedPayload, 'base64url').toString('utf8')) as SessionUser & { exp: number };
+  } catch {
+    return null;
+  }
+
+  if (!payload?.exp || payload.exp < Math.floor(Date.now() / 1000)) return null;
 
   return { id: payload.id, email: payload.email, role: payload.role };
 }
