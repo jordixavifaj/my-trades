@@ -64,8 +64,8 @@ export default function CSVUploader() {
   };
 
   return (
-    <div className="mx-auto w-full rounded-lg border border-slate-800 bg-slate-900 p-6 shadow-md">
-      <h2 className="mb-4 text-2xl font-bold text-slate-100">Importación DAS Trader</h2>
+    <div className="panel mx-auto w-full p-6">
+      <h2 className="mb-4 text-2xl font-semibold tracking-tight">Importación DAS Trader</h2>
 
       <div className="mb-4">
         <label htmlFor="csv-upload" className="mb-2 block text-sm font-medium text-slate-300">
@@ -77,7 +77,7 @@ export default function CSVUploader() {
           accept=".csv,.xls,.xlsx"
           onChange={handleFileUpload}
           disabled={uploading}
-          className="block w-full text-sm text-slate-400 file:mr-4 file:rounded-full file:border-0 file:bg-cyan-900 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-cyan-100 hover:file:bg-cyan-800 disabled:opacity-50"
+          className="block w-full text-sm text-slate-400 file:mr-4 file:rounded-full file:border-0 file:bg-cyan-500/20 file:px-4 file:py-2 file:text-sm file:font-semibold file:text-cyan-100 hover:file:bg-cyan-500/30 disabled:opacity-50"
         />
       </div>
 
