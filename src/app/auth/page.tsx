@@ -70,7 +70,9 @@ export default function AuthPage() {
         </form>
       </div>
       {message && <p className="mt-4 rounded bg-slate-800 p-2 text-sm">{message}</p>}
-      <p className="mt-4 text-xs text-slate-400">Google OAuth y NextAuth quedan pendientes por restricción de instalación de dependencias en este entorno.</p>
+      <div className="mt-4">
+        <a className="inline-block rounded bg-red-600 px-3 py-2 text-sm font-medium" href="/api/auth/google/start">Entrar con Google</a>
+      </div>
     </AppShell>
   );
 }
