@@ -19,6 +19,10 @@ export interface Trade {
   side: 'BUY' | 'SELL';
   pnl?: number;
   commission: number;
+  strategy?: {
+    id: string;
+    name: string;
+  } | null;
   createdAt: Date;
   updatedAt: Date;
   fills: ProcessedFill[];

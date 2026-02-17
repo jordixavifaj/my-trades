@@ -1,16 +1,18 @@
 import CSVUploader from '@/components/CSVUploader';
+import { AppShell } from '@/components/AppShell';
 
 export default function Home() {
   return (
-    <main className="flex min-h-screen flex-col items-center justify-center p-8 bg-gray-50">
-      <div className="w-full max-w-2xl">
-        <div className="text-center mb-8">
-          <h1 className="text-4xl font-bold text-gray-900 mb-4">My Trades</h1>
-          <p className="text-lg text-gray-600">Trading Journal Application</p>
+    <AppShell>
+      <section className="grid gap-6 md:grid-cols-2">
+        <div className="rounded-xl border border-slate-800 bg-slate-900 p-6">
+          <h1 className="mb-3 text-4xl font-bold">Trading Journal estilo Tradervue</h1>
+          <p className="text-slate-300">
+            Gestiona operaciones, estrategias, métricas y reportes en un dashboard responsivo con importación DAS Trader.
+          </p>
         </div>
-        
         <CSVUploader />
-      </div>
-    </main>
-  )
+      </section>
+    </AppShell>
+  );
 }
