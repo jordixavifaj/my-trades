@@ -14,9 +14,26 @@ export async function getDashboardMetrics() {
     const winRate = closedTrades.length ? (wins / closedTrades.length) * 100 : 0;
 
     const pnlByDay = new Map<string, number>();
+    const pnlByMonth = new Map<string, number>();
+    let equity = 0;
+    let peak = 0;
+    let maxDrawdown = 0;
+    const equityCurve: Array<{ date: string; equity: number; drawdown: number }> = [];
+
     for (const trade of closedTrades) {
-      const day = (trade.closeDate ?? trade.openDate).toISOString().slice(0, 10);
-      pnlByDay.set(day, (pnlByDay.get(day) ?? 0) + (trade.pnl ?? 0) - trade.commission);
+      const tradeDate = trade.closeDate ?? trade.openDate;
+      const day = tradeDate.toISOString().slice(0, 10);
+      const month = tradeDate.toISOString().slice(0, 7);
+      const net = (trade.pnl ?? 0) - trade.commission;
+
+      pnlByDay.set(day, (pnlByDay.get(day) ?? 0) + net);
+      pnlByMonth.set(month, (pnlByMonth.get(month) ?? 0) + net);
+
+      equity += net;
+      peak = Math.max(peak, equity);
+      const drawdown = peak - equity;
+      maxDrawdown = Math.max(maxDrawdown, drawdown);
+      equityCurve.push({ date: day, equity: Number(equity.toFixed(2)), drawdown: Number(drawdown.toFixed(2)) });
     }
 
     const strategyPerformance = Array.from(
@@ -41,15 +58,20 @@ export async function getDashboardMetrics() {
         losses,
         winRate: Number(winRate.toFixed(2)),
         totalPnl: Number(totalPnl.toFixed(2)),
+        maxDrawdown: Number(maxDrawdown.toFixed(2)),
       },
       pnlTimeline: Array.from(pnlByDay.entries()).map(([date, pnl]) => ({ date, pnl })),
+      pnlByMonth: Array.from(pnlByMonth.entries()).map(([month, pnl]) => ({ month, pnl })),
+      equityCurve,
       strategyPerformance,
       recentTrades: trades.slice(-10).reverse(),
     };
   } catch {
     return {
-      summary: { totalTrades: 0, closedTrades: 0, openTrades: 0, wins: 0, losses: 0, winRate: 0, totalPnl: 0 },
+      summary: { totalTrades: 0, closedTrades: 0, openTrades: 0, wins: 0, losses: 0, winRate: 0, totalPnl: 0, maxDrawdown: 0 },
       pnlTimeline: [],
+      pnlByMonth: [],
+      equityCurve: [],
       strategyPerformance: [],
       recentTrades: [],
     };

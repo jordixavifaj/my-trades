@@ -1,17 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { groupFillsIntoTrades, processDasTraderCSV } from '@/lib/csv-processor';
-import { authCookieName, verifySessionToken } from '@/lib/auth';
+import { requireRequestUser } from '@/lib/request-auth';
+import { createAuditLog } from '@/lib/audit';
+import { readSpreadsheetAsCsvLines } from '@/lib/spreadsheet-parser';
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = ['.csv', '.xls', '.xlsx'];
 
 export async function POST(request: NextRequest) {
   try {
-    const user = verifySessionToken(request.cookies.get(authCookieName)?.value);
-    if (!user) {
-      return NextResponse.json({ error: 'No autorizado' }, { status: 401 });
-    }
+    const auth = requireRequestUser(request);
+    if (auth instanceof NextResponse) return auth;
+    const user = auth;
 
     const contentType = request.headers.get('content-type') ?? '';
     if (!contentType.includes('multipart/form-data')) {
@@ -41,15 +42,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'File must be CSV, XLS o XLSX' }, { status: 400 });
     }
 
-
-    if (lower.endsWith('.xls') || lower.endsWith('.xlsx')) {
-      return NextResponse.json(
-        { error: 'Formato XLS/XLSX detectado. Exporta a CSV para procesarlo con fidelidad DAS Trader.' },
-        { status: 400 },
-      );
-    }
-
-    const lines = await getFileLines(file);
+    const lines = lower.endsWith('.csv') ? await getFileLines(file) : await readSpreadsheetAsCsvLines(file);
     const { fills, errors } = processDasTraderCSV(lines);
 
     if (fills.length === 0) {
@@ -75,6 +68,7 @@ export async function POST(request: NextRequest) {
 
         return prisma.trade.create({
           data: {
+            userId: user.id,
             symbol: tradeGroup.symbol,
             status: tradeGroup.status,
             openDate: firstFill.timestamp,
@@ -103,13 +97,11 @@ export async function POST(request: NextRequest) {
       }),
     );
 
-    await prisma.auditLog.create({
-      data: {
-        userId: user.id,
-        action: 'UPLOAD_TRADES',
-        reason: `Imported ${savedTrades.length} trades from ${file.name}`,
-        newValueJson: JSON.stringify({ fileName: file.name, trades: savedTrades.length, errors: errors.length }),
-      },
+    await createAuditLog({
+      userId: user.id,
+      action: 'UPLOAD_TRADES',
+      reason: `Imported ${savedTrades.length} trades from ${file.name}`,
+      newValue: { fileName: file.name, trades: savedTrades.length, errors: errors.length },
     });
 
     return NextResponse.json({
@@ -129,7 +121,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(
       {
-        error: 'Internal server error while processing upload',
+        error: error instanceof Error ? error.message : 'Internal server error while processing upload',
       },
       { status: 500 },
     );

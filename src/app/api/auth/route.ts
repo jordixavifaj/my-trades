@@ -1,7 +1,6 @@
-import { createHash } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { createSessionToken, sessionCookie } from '@/lib/auth';
+import { createSessionToken, sessionCookie, verifyPassword } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -12,9 +11,8 @@ export async function POST(request: NextRequest) {
   }
 
   const user = await prisma.user.findUnique({ where: { email } });
-  const hash = createHash('sha256').update(password).digest('hex');
 
-  if (!user || user.passwordHash !== hash || !user.isActive) {
+  if (!user || !verifyPassword(password, user.passwordHash) || !user.isActive) {
     return NextResponse.json({ error: 'Credenciales inválidas' }, { status: 401 });
   }
 
