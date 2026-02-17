@@ -5,12 +5,44 @@ import { createSessionToken, hashPassword, sessionCookie } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 
+type RegistrationPayload = { email: string; password: string; name: string | null };
+
+async function readRegistrationPayload(request: NextRequest): Promise<RegistrationPayload> {
+  const contentType = request.headers.get('content-type') || '';
+
+  if (contentType.includes('application/json')) {
+    const body = await request.json().catch(() => null);
+    return {
+      email: typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '',
+      password: typeof body?.password === 'string' ? body.password : '',
+      name: typeof body?.name === 'string' ? body.name.trim() : null,
+    };
+  }
+
+  if (
+    contentType.includes('application/x-www-form-urlencoded')
+    || contentType.includes('multipart/form-data')
+  ) {
+    const formData = await request.formData();
+    const rawName = formData.get('name');
+    return {
+      email: typeof formData.get('email') === 'string' ? String(formData.get('email')).trim().toLowerCase() : '',
+      password: typeof formData.get('password') === 'string' ? String(formData.get('password')) : '',
+      name: typeof rawName === 'string' ? rawName.trim() : null,
+    };
+  }
+
+  const body = await request.json().catch(() => null);
+  return {
+    email: typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '',
+    password: typeof body?.password === 'string' ? body.password : '',
+    name: typeof body?.name === 'string' ? body.name.trim() : null,
+  };
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
-    const password = typeof body?.password === 'string' ? body.password : '';
-    const name = typeof body?.name === 'string' ? body.name.trim() : null;
+    const { email, password, name } = await readRegistrationPayload(request);
 
     if (!email || !password) {
       return NextResponse.json({ error: 'Email y password son obligatorios' }, { status: 400 });
