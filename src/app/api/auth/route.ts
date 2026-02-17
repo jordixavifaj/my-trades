@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { createSessionToken, detectPasswordHashScheme, sessionCookie, verifyPassword } from '@/lib/auth';
+import { createSessionToken, sessionCookie, verifyPassword } from '@/lib/auth';
 
 export const runtime = 'nodejs';
 
@@ -49,14 +49,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Credenciales inválidas' }, { status: 401 });
     }
 
-    const hashScheme = detectPasswordHashScheme(user.passwordHash);
-
-    if (hashScheme === 'missing') {
+    if (!user.passwordHash) {
       return NextResponse.json({ error: 'Esta cuenta no tiene password local. Inicia sesión con Google.' }, { status: 401 });
-    }
-
-    if (hashScheme === 'bcrypt') {
-      return NextResponse.json({ error: 'Tu cuenta usa un formato de contraseña antiguo no compatible. Restablece tu contraseña o crea una nueva cuenta.' }, { status: 401 });
     }
 
     if (!verifyPassword(password, user.passwordHash)) {
