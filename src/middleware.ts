@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { authCookieName, verifySessionToken } from '@/lib/auth';
 
-const privatePrefixes = ['/dashboard', '/trades', '/reports', '/api/dashboard', '/api/reports', '/api/upload', '/api/strategies'];
+const privatePrefixes = ['/dashboard', '/trades', '/reports', '/api/dashboard', '/api/reports', '/api/upload', '/api/strategies', '/api/trades', '/api/fills'];
 
 function isPrivatePath(pathname: string) {
   return privatePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -35,5 +35,5 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/trades/:path*', '/reports/:path*', '/api/dashboard/:path*', '/api/reports/:path*', '/api/upload/:path*', '/api/strategies/:path*'],
+  matcher: ['/dashboard/:path*', '/trades/:path*', '/reports/:path*', '/api/dashboard/:path*', '/api/reports/:path*', '/api/upload/:path*', '/api/strategies/:path*', '/api/trades/:path*', '/api/fills/:path*'],
 };

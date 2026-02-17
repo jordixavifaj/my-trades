@@ -1,6 +1,6 @@
-import { createHash } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { hashPassword } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -15,12 +15,11 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'El usuario ya existe' }, { status: 409 });
   }
 
-  const passwordHash = createHash('sha256').update(password).digest('hex');
   const user = await prisma.user.create({
     data: {
       email,
       name,
-      passwordHash,
+      passwordHash: hashPassword(password),
       role: 'TRADER',
     },
   });

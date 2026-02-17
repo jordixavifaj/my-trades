@@ -1,4 +1,4 @@
-import { createHmac, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, pbkdf2Sync, randomBytes, timingSafeEqual } from 'crypto';
 
 export type SessionUser = {
   id: string;
@@ -8,6 +8,9 @@ export type SessionUser = {
 
 const COOKIE_NAME = 'mt_session';
 const SESSION_TTL_SECONDS = 60 * 60 * 12;
+const PASSWORD_ITERATIONS = 120000;
+const PASSWORD_KEYLEN = 64;
+const PASSWORD_DIGEST = 'sha512';
 
 function getSecret() {
   return process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET || 'dev-insecure-secret-change-me';
@@ -17,9 +20,40 @@ function sign(value: string) {
   return createHmac('sha256', getSecret()).update(value).digest('base64url');
 }
 
+export function hashPassword(password: string) {
+  const salt = randomBytes(16).toString('hex');
+  const hash = pbkdf2Sync(password, salt, PASSWORD_ITERATIONS, PASSWORD_KEYLEN, PASSWORD_DIGEST).toString('hex');
+  return `pbkdf2$${PASSWORD_ITERATIONS}$${salt}$${hash}`;
+}
+
+export function verifyPassword(password: string, storedHash: string | null | undefined) {
+  if (!storedHash) return false;
+
+  if (storedHash.startsWith('pbkdf2$')) {
+    const [, iterationsRaw, salt, expected] = storedHash.split('$');
+    const iterations = Number.parseInt(iterationsRaw, 10);
+    if (!iterations || !salt || !expected) return false;
+
+    const current = pbkdf2Sync(password, salt, iterations, PASSWORD_KEYLEN, PASSWORD_DIGEST).toString('hex');
+    return safeCompare(current, expected);
+  }
+
+  // backward compatibility with legacy sha256
+  const legacy = createHash('sha256').update(password).digest('hex');
+  return safeCompare(legacy, storedHash);
+}
+
+function safeCompare(a: string, b: string) {
+  const ba = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ba.length !== bb.length) return false;
+  return timingSafeEqual(ba, bb);
+}
+
 export function createSessionToken(user: SessionUser) {
   const payload = {
     ...user,
+    iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + SESSION_TTL_SECONDS,
   };
 
@@ -36,9 +70,7 @@ export function verifySessionToken(token?: string | null): SessionUser | null {
   if (!encodedPayload || !signature) return null;
 
   const expectedSignature = sign(encodedPayload);
-  const isValidSignature =
-    Buffer.byteLength(signature) === Buffer.byteLength(expectedSignature) &&
-    timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
+  const isValidSignature = safeCompare(signature, expectedSignature);
 
   if (!isValidSignature) return null;
 
@@ -55,7 +87,7 @@ export function sessionCookie(token: string) {
     value: token,
     options: {
       httpOnly: true,
-      sameSite: 'lax' as const,
+      sameSite: 'strict' as const,
       secure: process.env.NODE_ENV === 'production',
       path: '/',
       maxAge: SESSION_TTL_SECONDS,
@@ -69,7 +101,7 @@ export function clearSessionCookie() {
     value: '',
     options: {
       httpOnly: true,
-      sameSite: 'lax' as const,
+      sameSite: 'strict' as const,
       secure: process.env.NODE_ENV === 'production',
       path: '/',
       maxAge: 0,

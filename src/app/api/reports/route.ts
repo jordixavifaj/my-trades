@@ -1,9 +1,59 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { requireRequestUser } from '@/lib/request-auth';
 
-export async function GET() {
+function toCsv(rows: Record<string, unknown>[]) {
+  if (!rows.length) return '';
+  const headers = Object.keys(rows[0]);
+  const lines = [headers.join(',')];
+  for (const row of rows) {
+    lines.push(
+      headers
+        .map((h) => {
+          const value = row[h] == null ? '' : String(row[h]);
+          return value.includes(',') || value.includes('"') ? `"${value.replace(/"/g, '""')}"` : value;
+        })
+        .join(','),
+    );
+  }
+  return lines.join('\n');
+}
+
+function parseWhere(searchParams: URLSearchParams) {
+  const symbol = searchParams.get('symbol') ?? undefined;
+  const status = searchParams.get('status') as 'OPEN' | 'CLOSED' | null;
+  const strategyId = searchParams.get('strategyId') ?? undefined;
+  const from = searchParams.get('from');
+  const to = searchParams.get('to');
+  return {
+    symbol: symbol ? { contains: symbol, mode: 'insensitive' as const } : undefined,
+    status: status === 'OPEN' || status === 'CLOSED' ? status : undefined,
+    strategyId,
+    openDate: from || to ? { gte: from ? new Date(from) : undefined, lte: to ? new Date(to) : undefined } : undefined,
+  };
+}
+
+export async function GET(request: NextRequest) {
+  const auth = requireRequestUser(request);
+  if (auth instanceof NextResponse) return auth;
+
   try {
-    const trades = await prisma.trade.findMany({ include: { strategy: true }, orderBy: { openDate: 'desc' } });
+    const { searchParams } = new URL(request.url);
+    const exportType = searchParams.get('export');
+    const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10));
+    const pageSize = Math.min(100, Math.max(1, Number.parseInt(searchParams.get('pageSize') ?? '20', 10)));
+    const where = parseWhere(searchParams);
+
+    const [trades, total] = await Promise.all([
+      prisma.trade.findMany({
+        where,
+        include: { strategy: true },
+        orderBy: { openDate: 'desc' },
+        skip: (page - 1) * pageSize,
+        take: pageSize,
+      }),
+      prisma.trade.count({ where }),
+    ]);
 
     const byStrategy = Object.values(
       trades.reduce<Record<string, { strategy: string; trades: number; pnl: number }>>((acc, trade) => {
@@ -17,8 +67,45 @@ export async function GET() {
       }, {}),
     );
 
+    if (exportType === 'excel') {
+      const csv = toCsv(
+        trades.map((trade) => ({
+          symbol: trade.symbol,
+          status: trade.status,
+          strategy: trade.strategy?.name ?? '',
+          openDate: trade.openDate.toISOString(),
+          closeDate: trade.closeDate?.toISOString() ?? '',
+          pnl: ((trade.pnl ?? 0) - trade.commission).toFixed(2),
+        })),
+      );
+      return new NextResponse(csv, {
+        headers: {
+          'Content-Type': 'text/csv; charset=utf-8',
+          'Content-Disposition': 'attachment; filename="trades-report.csv"',
+        },
+      });
+    }
+
+    if (exportType === 'pdf') {
+      const content = [
+        'MY TRADES REPORT',
+        `Generated: ${new Date().toISOString()}`,
+        `Total rows: ${trades.length}`,
+        ...trades.map((t) => `${t.symbol} | ${t.status} | ${(t.pnl ?? 0) - t.commission}`),
+      ].join('\n');
+      return new NextResponse(content, {
+        headers: {
+          'Content-Type': 'application/pdf',
+          'Content-Disposition': 'attachment; filename="trades-report.pdf"',
+        },
+      });
+    }
+
     return NextResponse.json({
-      totalTrades: trades.length,
+      totalTrades: total,
+      page,
+      pageSize,
+      pages: Math.ceil(total / pageSize),
       byStrategy,
       trades,
     });
