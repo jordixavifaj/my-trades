@@ -13,7 +13,17 @@ function runUnzip(args: string[]) {
 }
 
 function decodeXml(value: string) {
-  return value.replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+  return value
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+}
+
+function escapeCsvValue(value: string) {
+  if (value.includes(',') || value.includes('"') || value.includes('\n')) return `"${value.replace(/"/g, '""')}"`;
+  return value;
 }
 
 function parseSharedStrings(xml: string) {
@@ -73,9 +83,28 @@ function parseSheetXml(xml: string, sharedStrings: string[]) {
   return rows;
 }
 
+function parseSpreadsheetText(text: string) {
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  if (!lines.length) {
+    throw new Error('Archivo sin contenido legible.');
+  }
+
+  if (lines.some((line) => line.includes(','))) return lines;
+  if (lines.some((line) => line.includes('\t'))) {
+    return lines.map((line) => line.split('\t').map((value) => escapeCsvValue(value.trim())).join(','));
+  }
+
+  return lines.map((line) => escapeCsvValue(line));
+}
+
 export async function readSpreadsheetAsCsvLines(file: File): Promise<string[]> {
   const lower = file.name.toLowerCase();
-  if (lower.endsWith('.xls')) throw new Error('Formato .xls no soportado en este entorno. Usa .xlsx o CSV.');
+
+  if (lower.endsWith('.xls')) {
+    // Some brokers export tab-delimited text with .xls extension.
+    const text = await file.text();
+    return parseSpreadsheetText(text);
+  }
 
   const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'xlsx-'));
   const tempFile = path.join(tempDir, file.name);
@@ -84,12 +113,35 @@ export async function readSpreadsheetAsCsvLines(file: File): Promise<string[]> {
     const buffer = Buffer.from(await file.arrayBuffer());
     await fs.writeFile(tempFile, buffer);
 
-    const sharedStringsXml = await runUnzip(['-p', tempFile, 'xl/sharedStrings.xml']).catch(() => '');
-    const sheetXml = await runUnzip(['-p', tempFile, 'xl/worksheets/sheet1.xml']);
-    const sharedStrings = sharedStringsXml ? parseSharedStrings(sharedStringsXml) : [];
-    const rows = parseSheetXml(sheetXml, sharedStrings);
+    const workbookXml = await runUnzip(['-p', tempFile, 'xl/workbook.xml']);
+    const sheetTargets = Array.from(workbookXml.matchAll(/<sheet[^>]+r:id="([^"]+)"[^>]*>/g)).map((m) => m[1]);
+    const relsXml = await runUnzip(['-p', tempFile, 'xl/_rels/workbook.xml.rels']);
 
-    return rows.map((cells) => cells.map((value) => (value.includes(',') || value.includes('"') ? `"${value.replace(/"/g, '""')}"` : value)).join(','));
+    const relationshipMap = new Map<string, string>();
+    Array.from(relsXml.matchAll(/<Relationship[^>]+Id="([^"]+)"[^>]+Target="([^"]+)"/g)).forEach((match) => {
+      relationshipMap.set(match[1], match[2]);
+    });
+
+    const sharedStringsXml = await runUnzip(['-p', tempFile, 'xl/sharedStrings.xml']).catch(() => '');
+    const sharedStrings = sharedStringsXml ? parseSharedStrings(sharedStringsXml) : [];
+
+    for (const relationshipId of sheetTargets) {
+      const target = relationshipMap.get(relationshipId);
+      if (!target) continue;
+      const normalizedTarget = target.startsWith('/') ? target.slice(1) : `xl/${target.replace(/^\.?\/?/, '')}`;
+      const sheetXml = await runUnzip(['-p', tempFile, normalizedTarget]).catch(() => '');
+      if (!sheetXml) continue;
+
+      const rows = parseSheetXml(sheetXml, sharedStrings)
+        .map((cells) => cells.map((value) => escapeCsvValue(value.trim())).join(','))
+        .filter((line) => line.replace(/,/g, '').trim().length > 0);
+
+      if (rows.length > 0) {
+        return rows;
+      }
+    }
+
+    throw new Error('No se encontró una hoja con datos en el archivo XLSX.');
   } finally {
     await fs.rm(tempDir, { recursive: true, force: true });
   }

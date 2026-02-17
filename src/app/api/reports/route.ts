@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { requireRequestUser } from '@/lib/request-auth';
+import { logError } from '@/lib/logger';
 
 function toCsv(rows: Record<string, unknown>[]) {
   if (!rows.length) return '';
@@ -62,13 +63,14 @@ function createSimplePdf(lines: string[]) {
   return Buffer.from(pdf, 'utf8');
 }
 
-function parseWhere(searchParams: URLSearchParams) {
+function parseWhere(searchParams: URLSearchParams, userId: string) {
   const symbol = searchParams.get('symbol') ?? undefined;
   const status = searchParams.get('status') as 'OPEN' | 'CLOSED' | null;
   const strategyId = searchParams.get('strategyId') ?? undefined;
   const from = searchParams.get('from');
   const to = searchParams.get('to');
   return {
+    userId,
     symbol: symbol ? { contains: symbol, mode: 'insensitive' as const } : undefined,
     status: status === 'OPEN' || status === 'CLOSED' ? status : undefined,
     strategyId,
@@ -85,7 +87,7 @@ export async function GET(request: NextRequest) {
     const exportType = searchParams.get('export');
     const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10));
     const pageSize = Math.min(100, Math.max(1, Number.parseInt(searchParams.get('pageSize') ?? '20', 10)));
-    const where = parseWhere(searchParams);
+    const where = parseWhere(searchParams, auth.id);
 
     const [trades, total] = await Promise.all([
       prisma.trade.findMany({
@@ -154,7 +156,7 @@ export async function GET(request: NextRequest) {
       trades,
     });
   } catch (error) {
-    console.error(error);
+    logError('GET /api/reports failed', error, { userId: auth.id });
     return NextResponse.json({ error: 'No se pudo generar reporte' }, { status: 500 });
   }
 }

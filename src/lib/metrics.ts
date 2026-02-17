@@ -1,79 +1,69 @@
 import { prisma } from '@/lib/prisma';
 
-export async function getDashboardMetrics() {
-  try {
-    const trades = await prisma.trade.findMany({
-      orderBy: { openDate: 'asc' },
-      include: { strategy: true },
-    });
+export async function getDashboardMetrics(userId: string) {
+  const trades = await prisma.trade.findMany({
+    where: { userId },
+    orderBy: { openDate: 'asc' },
+    include: { strategy: true },
+  });
 
-    const closedTrades = trades.filter((t) => t.status === 'CLOSED' && t.pnl !== null);
-    const totalPnl = closedTrades.reduce((acc, trade) => acc + (trade.pnl ?? 0) - trade.commission, 0);
-    const wins = closedTrades.filter((trade) => (trade.pnl ?? 0) > 0).length;
-    const losses = closedTrades.filter((trade) => (trade.pnl ?? 0) <= 0).length;
-    const winRate = closedTrades.length ? (wins / closedTrades.length) * 100 : 0;
+  const closedTrades = trades.filter((t) => t.status === 'CLOSED' && t.pnl !== null);
+  const totalPnl = closedTrades.reduce((acc, trade) => acc + (trade.pnl ?? 0) - trade.commission, 0);
+  const wins = closedTrades.filter((trade) => (trade.pnl ?? 0) > 0).length;
+  const losses = closedTrades.filter((trade) => (trade.pnl ?? 0) <= 0).length;
+  const winRate = closedTrades.length ? (wins / closedTrades.length) * 100 : 0;
 
-    const pnlByDay = new Map<string, number>();
-    const pnlByMonth = new Map<string, number>();
-    let equity = 0;
-    let peak = 0;
-    let maxDrawdown = 0;
-    const equityCurve: Array<{ date: string; equity: number; drawdown: number }> = [];
+  const pnlByDay = new Map<string, number>();
+  const pnlByMonth = new Map<string, number>();
+  let equity = 0;
+  let peak = 0;
+  let maxDrawdown = 0;
+  const equityCurve: Array<{ date: string; equity: number; drawdown: number }> = [];
 
-    for (const trade of closedTrades) {
-      const tradeDate = trade.closeDate ?? trade.openDate;
-      const day = tradeDate.toISOString().slice(0, 10);
-      const month = tradeDate.toISOString().slice(0, 7);
-      const net = (trade.pnl ?? 0) - trade.commission;
+  for (const trade of closedTrades) {
+    const tradeDate = trade.closeDate ?? trade.openDate;
+    const day = tradeDate.toISOString().slice(0, 10);
+    const month = tradeDate.toISOString().slice(0, 7);
+    const net = (trade.pnl ?? 0) - trade.commission;
 
-      pnlByDay.set(day, (pnlByDay.get(day) ?? 0) + net);
-      pnlByMonth.set(month, (pnlByMonth.get(month) ?? 0) + net);
+    pnlByDay.set(day, (pnlByDay.get(day) ?? 0) + net);
+    pnlByMonth.set(month, (pnlByMonth.get(month) ?? 0) + net);
 
-      equity += net;
-      peak = Math.max(peak, equity);
-      const drawdown = peak - equity;
-      maxDrawdown = Math.max(maxDrawdown, drawdown);
-      equityCurve.push({ date: day, equity: Number(equity.toFixed(2)), drawdown: Number(drawdown.toFixed(2)) });
-    }
-
-    const strategyPerformance = Array.from(
-      trades
-        .reduce((acc, trade) => {
-          const key = trade.strategy?.name ?? 'Sin estrategia';
-          const current = acc.get(key) ?? { name: key, trades: 0, pnl: 0 };
-          current.trades += 1;
-          current.pnl += (trade.pnl ?? 0) - trade.commission;
-          acc.set(key, current);
-          return acc;
-        }, new Map<string, { name: string; trades: number; pnl: number }>())
-        .values(),
-    );
-
-    return {
-      summary: {
-        totalTrades: trades.length,
-        closedTrades: closedTrades.length,
-        openTrades: trades.length - closedTrades.length,
-        wins,
-        losses,
-        winRate: Number(winRate.toFixed(2)),
-        totalPnl: Number(totalPnl.toFixed(2)),
-        maxDrawdown: Number(maxDrawdown.toFixed(2)),
-      },
-      pnlTimeline: Array.from(pnlByDay.entries()).map(([date, pnl]) => ({ date, pnl })),
-      pnlByMonth: Array.from(pnlByMonth.entries()).map(([month, pnl]) => ({ month, pnl })),
-      equityCurve,
-      strategyPerformance,
-      recentTrades: trades.slice(-10).reverse(),
-    };
-  } catch {
-    return {
-      summary: { totalTrades: 0, closedTrades: 0, openTrades: 0, wins: 0, losses: 0, winRate: 0, totalPnl: 0, maxDrawdown: 0 },
-      pnlTimeline: [],
-      pnlByMonth: [],
-      equityCurve: [],
-      strategyPerformance: [],
-      recentTrades: [],
-    };
+    equity += net;
+    peak = Math.max(peak, equity);
+    const drawdown = peak - equity;
+    maxDrawdown = Math.max(maxDrawdown, drawdown);
+    equityCurve.push({ date: day, equity: Number(equity.toFixed(2)), drawdown: Number(drawdown.toFixed(2)) });
   }
+
+  const strategyPerformance = Array.from(
+    trades
+      .reduce((acc, trade) => {
+        const key = trade.strategy?.name ?? 'Sin estrategia';
+        const current = acc.get(key) ?? { name: key, trades: 0, pnl: 0 };
+        current.trades += 1;
+        current.pnl += (trade.pnl ?? 0) - trade.commission;
+        acc.set(key, current);
+        return acc;
+      }, new Map<string, { name: string; trades: number; pnl: number }>())
+      .values(),
+  );
+
+  return {
+    summary: {
+      totalTrades: trades.length,
+      closedTrades: closedTrades.length,
+      openTrades: trades.length - closedTrades.length,
+      wins,
+      losses,
+      winRate: Number(winRate.toFixed(2)),
+      totalPnl: Number(totalPnl.toFixed(2)),
+      maxDrawdown: Number(maxDrawdown.toFixed(2)),
+    },
+    pnlTimeline: Array.from(pnlByDay.entries()).map(([date, pnl]) => ({ date, pnl })),
+    pnlByMonth: Array.from(pnlByMonth.entries()).map(([month, pnl]) => ({ month, pnl })),
+    equityCurve,
+    strategyPerformance,
+    recentTrades: trades.slice(-10).reverse(),
+  };
 }

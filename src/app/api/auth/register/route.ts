@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createSessionToken, hashPassword, sessionCookie } from '@/lib/auth';
+import { logError, logInfo } from '@/lib/logger';
+import { parseString } from '@/lib/validation';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const email = typeof body?.email === 'string' ? body.email.trim() : '';
-    const password = typeof body?.password === 'string' ? body.password : '';
-    const name = typeof body?.name === 'string' ? body.name.trim() : null;
-
-    if (!email || !password) {
-      return NextResponse.json({ error: 'Email y password son obligatorios' }, { status: 400 });
-    }
+    const email = parseString(body?.email, 'email', { minLength: 5, maxLength: 255 }).toLowerCase();
+    const password = parseString(body?.password, 'password', { minLength: 8, maxLength: 128 });
+    const name = body?.name ? parseString(body.name, 'name', { minLength: 2, maxLength: 100 }) : null;
 
     const exists = await prisma.user.findUnique({ where: { email } });
     if (exists) {
@@ -32,10 +30,14 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.json({ id: user.id, email: user.email, role: user.role }, { status: 201 });
     const cookie = sessionCookie(token);
     response.cookies.set(cookie.name, cookie.value, cookie.options);
+    logInfo('User registered', { userId: user.id });
 
     return response;
   } catch (error) {
-    console.error('POST /api/auth/register failed', error);
-    return NextResponse.json({ error: 'Error interno al registrar usuario' }, { status: 500 });
+    logError('POST /api/auth/register failed', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Error interno al registrar usuario' },
+      { status: 500 },
+    );
   }
 }

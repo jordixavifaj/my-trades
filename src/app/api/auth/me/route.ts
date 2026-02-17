@@ -1,6 +1,6 @@
 import { cookies } from 'next/headers';
 import { NextResponse } from 'next/server';
-import { authCookieName, verifySessionToken } from '@/lib/auth';
+import { authCookieName, createSessionToken, sessionCookie, verifySessionToken } from '@/lib/auth';
 
 export async function GET() {
   const token = cookies().get(authCookieName)?.value;
@@ -10,5 +10,10 @@ export async function GET() {
     return NextResponse.json({ authenticated: false }, { status: 401 });
   }
 
-  return NextResponse.json({ authenticated: true, user });
+  const refreshedToken = createSessionToken(user);
+  const response = NextResponse.json({ authenticated: true, user });
+  const cookie = sessionCookie(refreshedToken);
+  response.cookies.set(cookie.name, cookie.value, cookie.options);
+
+  return response;
 }

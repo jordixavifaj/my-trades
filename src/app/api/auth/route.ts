@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { createSessionToken, sessionCookie, verifyPassword } from '@/lib/auth';
+import { logError, logInfo } from '@/lib/logger';
+import { parseString } from '@/lib/validation';
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const email = typeof body?.email === 'string' ? body.email.trim() : '';
-    const password = typeof body?.password === 'string' ? body.password : '';
-
-    if (!email || !password) {
-      return NextResponse.json({ error: 'Email y password requeridos' }, { status: 400 });
-    }
+    const email = parseString(body?.email, 'email', { minLength: 5, maxLength: 255 }).toLowerCase();
+    const password = parseString(body?.password, 'password', { minLength: 1, maxLength: 128 });
 
     const user = await prisma.user.findUnique({ where: { email } });
 
@@ -22,10 +20,11 @@ export async function POST(request: NextRequest) {
     const response = NextResponse.json({ id: user.id, email: user.email, role: user.role });
     const cookie = sessionCookie(token);
     response.cookies.set(cookie.name, cookie.value, cookie.options);
+    logInfo('User logged in', { userId: user.id });
 
     return response;
   } catch (error) {
-    console.error('POST /api/auth failed', error);
-    return NextResponse.json({ error: 'Error interno en login' }, { status: 500 });
+    logError('POST /api/auth failed', error);
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Error interno en login' }, { status: 500 });
   }
 }

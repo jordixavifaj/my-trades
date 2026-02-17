@@ -1,10 +1,13 @@
+import { cookies } from 'next/headers';
 import { AppShell } from '@/components/AppShell';
 import { TradingCalendar } from '@/components/TradingCalendar';
 import { getDashboardMetrics } from '@/lib/metrics';
 import { DashboardCharts } from '@/components/DashboardCharts';
+import { authCookieName, verifySessionToken } from '@/lib/auth';
 
 export default async function DashboardPage() {
-  const data = await getDashboardMetrics();
+  const user = verifySessionToken(cookies().get(authCookieName)?.value);
+  const data = user ? await getDashboardMetrics(user.id) : await getDashboardMetrics('');
 
   return (
     <AppShell>
