@@ -1,22 +1,16 @@
 # My Trades
 
-Trading journal application built with Next.js 14, TypeScript, TailwindCSS, Prisma, and PostgreSQL, including robust CSV validation for DAS Trader fills.
+Trading journal application built with Next.js 14, TypeScript, TailwindCSS, Prisma, and PostgreSQL.
 
-## Features
+## Production-ready updates included
 
-- Upload DAS Trader CSV files
-- Process fills and automatically group them into trades
-- Store trades and fills in PostgreSQL database
-- Clean and professional UI with TailwindCSS
+- Runtime guard for `DATABASE_URL` so Prisma fails fast with clear error if missing.
+- Google OAuth login flow (custom implementation) in addition to email/password auth.
+- Real PDF binary generation for reports endpoint.
+- Full UI CRUD for trades and fills (create/edit/delete) wired to existing APIs.
+- CI workflow (`lint`, `typecheck`, `build`) + seed script + deploy checklist.
 
-## Tech Stack
-
-- **Framework**: Next.js 14 with App Router
-- **Language**: TypeScript
-- **Styling**: TailwindCSS
-- **Database**: PostgreSQL
-- **ORM**: Prisma
-- **File Processing**: Custom CSV parser with row-level validation
+> ⚠️ Note: Installing new npm packages is blocked in this environment, so a full migration to **NextAuth** and true binary `.xls` parsing libraries could not be completed here.
 
 ## Getting Started
 
@@ -27,105 +21,46 @@ Trading journal application built with Next.js 14, TypeScript, TailwindCSS, Pris
 
 ### Installation
 
-1. Install dependencies:
 ```bash
 npm install
-```
-
-2. Set up environment variables:
-```bash
 cp .env.example .env.local
 ```
 
-Update `DATABASE_URL` in `.env.local` with your PostgreSQL connection string.
+Set at least:
 
-3. Set up the database:
+- `DATABASE_URL`
+- `AUTH_SECRET`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+
+### Database setup
+
 ```bash
 npx prisma generate
-npx prisma db push
+npx prisma migrate dev
+npm run seed
 ```
 
-4. Run the development server:
+### Run
+
 ```bash
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Scripts
 
-## Project Structure
+- `npm run dev`
+- `npm run build`
+- `npm run start`
+- `npm run lint`
+- `npm run typecheck`
+- `npm run check`
+- `npm run seed`
 
-```
-src/
-├── app/
-│   ├── api/
-│   │   └── upload/          # API endpoint for CSV upload
-│   ├── globals.css          # Global styles
-│   ├── layout.tsx           # Root layout
-│   └── page.tsx             # Home page
-├── components/
-│   └── CSVUploader.tsx      # CSV upload component
-├── lib/
-│   ├── csv-processor.ts     # CSV processing logic
-│   └── prisma.ts            # Prisma client
-├── types/
-│   └── trading.ts           # TypeScript types
-prisma/
-└── schema.prisma            # Database schema
-```
+## CI
 
-## Database Schema
+GitHub Actions workflow: `.github/workflows/ci.yml`
 
-The application uses two main models:
+## Deployment checklist
 
-### Trade
-- Stores grouped trade information
-- Contains P&L, status (open/closed), dates, and commission
-
-### Fill
-- Stores individual fill/executions
-- Linked to trades with foreign key relationship
-
-## CSV Format
-
-The application expects DAS Trader CSV exports with the following columns:
-- Symbol
-- Time/Date
-- Side (BUY/SELL)
-- Price
-- Quantity
-- Commission
-
-## Usage
-
-1. Export your fills from DAS Trader as a CSV file
-2. Upload the CSV using the web interface
-3. The system will automatically:
-   - Parse the CSV data
-   - Group fills into trades using FIFO logic
-   - Calculate P&L for closed trades
-   - Save everything to the database
-
-## Development
-
-### Available Scripts
-
-- `npm run dev` - Start development server
-- `npm run build` - Build for production
-- `npm run start` - Start production server
-- `npm run lint` - Run ESLint
-- `npm run typecheck` - Run TypeScript type checks
-
-### Database Commands
-
-- `npx prisma studio` - Open Prisma Studio
-- `npx prisma generate` - Generate Prisma client
-- `npx prisma db push` - Push schema to database
-- `npx prisma migrate dev` - Create and run migrations
-
-## Future Features
-
-- Dashboard with trade statistics
-- Charts and analytics
-- Trade editing capabilities
-- Export functionality
-- Multiple account support
+See: `docs/deploy-checklist.md`

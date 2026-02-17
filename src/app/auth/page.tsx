@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { AppShell } from '@/components/AppShell';
 
 type SessionUser = {
@@ -10,8 +11,10 @@ type SessionUser = {
 };
 
 export default function AuthPage() {
+  const router = useRouter();
   const [message, setMessage] = useState('');
   const [session, setSession] = useState<SessionUser | null>(null);
+  const [submitting, setSubmitting] = useState<'login' | 'register' | null>(null);
 
   async function loadSession() {
     const response = await fetch('/api/auth/me', { cache: 'no-store' });
@@ -28,15 +31,32 @@ export default function AuthPage() {
     loadSession();
   }, []);
 
-  async function submit(path: string, formData: FormData) {
-    const response = await fetch(path, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(Object.fromEntries(formData.entries())),
-    });
-    const result = await response.json();
-    setMessage(response.ok ? `OK: ${JSON.stringify(result)}` : `Error: ${result.error}`);
-    await loadSession();
+  async function submit(kind: 'login' | 'register', path: string, formData: FormData) {
+    try {
+      setSubmitting(kind);
+      setMessage('');
+
+      const response = await fetch(path, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(Object.fromEntries(formData.entries())),
+      });
+
+      const result = await response.json().catch(() => ({ error: 'Respuesta inválida del servidor' }));
+      if (!response.ok) {
+        setMessage(`Error: ${result.error ?? 'No se pudo completar la operación'}`);
+        return;
+      }
+
+      setMessage(kind === 'register' ? 'Cuenta creada y sesión iniciada correctamente.' : 'Login correcto.');
+      await loadSession();
+      router.push('/dashboard');
+      router.refresh();
+    } catch {
+      setMessage('Error de red. Intenta de nuevo.');
+    } finally {
+      setSubmitting(null);
+    }
   }
 
   async function logout() {
@@ -55,22 +75,28 @@ export default function AuthPage() {
         </div>
       )}
       <div className="grid gap-4 md:grid-cols-2">
-        <form className="space-y-3 rounded-lg border border-slate-800 bg-slate-900 p-4" onSubmit={(e) => { e.preventDefault(); submit('/api/auth', new FormData(e.currentTarget)); }}>
+        <form className="space-y-3 rounded-lg border border-slate-800 bg-slate-900 p-4" onSubmit={(e) => { e.preventDefault(); submit('login', '/api/auth', new FormData(e.currentTarget)); }}>
           <h2 className="text-xl font-semibold">Login</h2>
-          <input className="w-full rounded bg-slate-800 p-2" type="email" name="email" placeholder="Email" />
-          <input className="w-full rounded bg-slate-800 p-2" type="password" name="password" placeholder="Password" />
-          <button className="rounded bg-cyan-600 px-3 py-2" type="submit">Entrar</button>
+          <input className="w-full rounded bg-slate-800 p-2" type="email" name="email" placeholder="Email" required />
+          <input className="w-full rounded bg-slate-800 p-2" type="password" name="password" placeholder="Password" required />
+          <button className="rounded bg-cyan-600 px-3 py-2 disabled:opacity-60" disabled={submitting !== null} type="submit">
+            {submitting === 'login' ? 'Entrando...' : 'Entrar'}
+          </button>
         </form>
-        <form className="space-y-3 rounded-lg border border-slate-800 bg-slate-900 p-4" onSubmit={(e) => { e.preventDefault(); submit('/api/auth/register', new FormData(e.currentTarget)); }}>
+        <form className="space-y-3 rounded-lg border border-slate-800 bg-slate-900 p-4" onSubmit={(e) => { e.preventDefault(); submit('register', '/api/auth/register', new FormData(e.currentTarget)); }}>
           <h2 className="text-xl font-semibold">Registro</h2>
           <input className="w-full rounded bg-slate-800 p-2" type="text" name="name" placeholder="Nombre" />
-          <input className="w-full rounded bg-slate-800 p-2" type="email" name="email" placeholder="Email" />
-          <input className="w-full rounded bg-slate-800 p-2" type="password" name="password" placeholder="Password" />
-          <button className="rounded bg-emerald-600 px-3 py-2" type="submit">Crear cuenta</button>
+          <input className="w-full rounded bg-slate-800 p-2" type="email" name="email" placeholder="Email" required />
+          <input className="w-full rounded bg-slate-800 p-2" type="password" name="password" placeholder="Password" required minLength={6} />
+          <button className="rounded bg-emerald-600 px-3 py-2 disabled:opacity-60" disabled={submitting !== null} type="submit">
+            {submitting === 'register' ? 'Creando...' : 'Crear cuenta'}
+          </button>
         </form>
       </div>
       {message && <p className="mt-4 rounded bg-slate-800 p-2 text-sm">{message}</p>}
-      <p className="mt-4 text-xs text-slate-400">Google OAuth y NextAuth quedan pendientes por restricción de instalación de dependencias en este entorno.</p>
+      <div className="mt-4">
+        <a className="inline-block rounded bg-red-600 px-3 py-2 text-sm font-medium" href="/api/auth/google/start">Entrar con Google</a>
+      </div>
     </AppShell>
   );
 }

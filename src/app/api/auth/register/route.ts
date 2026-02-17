@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { hashPassword } from '@/lib/auth';
+import { createSessionToken, hashPassword, sessionCookie } from '@/lib/auth';
 
 export async function POST(request: NextRequest) {
   const body = await request.json();
@@ -21,8 +21,14 @@ export async function POST(request: NextRequest) {
       name,
       passwordHash: hashPassword(password),
       role: 'TRADER',
+      isActive: true,
     },
   });
 
-  return NextResponse.json({ id: user.id, email: user.email }, { status: 201 });
+  const token = createSessionToken({ id: user.id, email: user.email, role: user.role });
+  const response = NextResponse.json({ id: user.id, email: user.email, role: user.role }, { status: 201 });
+  const cookie = sessionCookie(token);
+  response.cookies.set(cookie.name, cookie.value, cookie.options);
+
+  return response;
 }
