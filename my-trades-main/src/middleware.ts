@@ -7,7 +7,7 @@ type SessionUser = {
 };
 
 const authCookieName = 'mt_session';
-const privatePrefixes = ['/dashboard', '/trades', '/reports', '/api/dashboard', '/api/reports', '/api/upload', '/api/strategies', '/api/trades', '/api/fills'];
+const privatePrefixes = ['/dashboard', '/trades', '/reports', '/chartlab', '/api/dashboard', '/api/reports', '/api/upload', '/api/strategies', '/api/trades', '/api/fills', '/api/chart'];
 
 function isPrivatePath(pathname: string) {
   return privatePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -111,5 +111,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/trades/:path*', '/reports/:path*', '/api/dashboard/:path*', '/api/reports/:path*', '/api/upload/:path*', '/api/strategies/:path*', '/api/trades/:path*', '/api/fills/:path*'],
+  matcher: ['/dashboard/:path*', '/trades/:path*', '/reports/:path*', '/chartlab/:path*', '/api/dashboard/:path*', '/api/reports/:path*', '/api/upload/:path*', '/api/strategies/:path*', '/api/trades/:path*', '/api/fills/:path*', '/api/chart/:path*'],
 };

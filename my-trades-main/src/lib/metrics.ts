@@ -4,7 +4,10 @@ function normalizeSide(side: string): 'BUY' | 'SELL' {
   return side === 'SELL' ? 'SELL' : 'BUY';
 }
 
-function normalizeStatus(status: string): 'OPEN' | 'CLOSED' {
+function normalizeStatus(status: string, closeDate: Date | null): 'OPEN' | 'CLOSED' {
+  // Si tiene closeDate, está cerrado sin importar el campo status
+  if (closeDate) return 'CLOSED';
+  // Si no tiene closeDate, usar el campo status
   return status === 'CLOSED' ? 'CLOSED' : 'OPEN';
 }
 
@@ -48,16 +51,21 @@ export async function getDashboardMetrics() {
     const tradesByDay = trades.reduce<Record<string, Array<{ id: string; symbol: string; pnl: number; side: 'BUY' | 'SELL'; quantity: number; openDate: string; closeDate: string | null; status: 'OPEN' | 'CLOSED' }>>>((acc, trade) => {
       const d = (trade.closeDate ?? trade.openDate).toISOString().slice(0, 10);
       if (!acc[d]) acc[d] = [];
-      acc[d].push({
-        id: trade.id,
-        symbol: trade.symbol,
-        pnl: (trade.pnl ?? 0) - trade.commission,
-        side: normalizeSide(trade.side),
-        quantity: trade.quantity,
-        openDate: trade.openDate.toISOString(),
-        closeDate: trade.closeDate ? trade.closeDate.toISOString() : null,
-        status: normalizeStatus(trade.status),
-      });
+      
+      // Evitar duplicados: solo agregar si no existe un trade con mismo ID
+      const existingTrade = acc[d].find(t => t.id === trade.id);
+      if (!existingTrade) {
+        acc[d].push({
+          id: trade.id,
+          symbol: trade.symbol,
+          pnl: (trade.pnl ?? 0) - trade.commission,
+          side: normalizeSide(trade.side),
+          quantity: trade.quantity,
+          openDate: trade.openDate.toISOString(),
+          closeDate: trade.closeDate ? trade.closeDate.toISOString() : null,
+          status: normalizeStatus(trade.status, trade.closeDate),
+        });
+      }
       return acc;
     }, {});
 

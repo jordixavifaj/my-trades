@@ -34,7 +34,7 @@ export function TradingCalendar({ days, tradesByDay }: { days: Array<{ date: str
       }
     }
 
-    return new Date();
+    return new Date(2026, 0, 1); // Enero 2026 como fecha por defecto
   });
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
