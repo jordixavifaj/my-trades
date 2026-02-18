@@ -1,5 +1,5 @@
 import { AppShell } from '@/components/AppShell';
-import { ChartWorkbench } from '@/components/ChartWorkbench';
+import { ChartWorkbench, ChartWorkbenchProps } from '@/components/ChartWorkbench';
 
 export default function ChartDetailPage({ params, searchParams }: { params: { id: string }; searchParams?: { day?: string } }) {
   return (
