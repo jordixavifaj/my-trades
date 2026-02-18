@@ -3,6 +3,15 @@
 import Link from 'next/link';
 import { useMemo, useState } from 'react';
 
+// Función para formatear fecha a DD/MM/YY
+function formatDate(dateString: string): string {
+  const date = new Date(dateString);
+  const day = date.getDate().toString().padStart(2, '0');
+  const month = (date.getMonth() + 1).toString().padStart(2, '0');
+  const year = date.getFullYear().toString().slice(-2);
+  return `${day}/${month}/${year}`;
+}
+
 type CalendarTrade = {
   id: string;
   symbol: string;
@@ -122,7 +131,7 @@ export function TradingCalendar({ days, tradesByDay }: { days: Array<{ date: str
       </div>
 
       <div className="mt-5 rounded-xl border border-slate-800 bg-slate-950/60 p-4">
-        <h4 className="mb-3 text-sm font-semibold text-slate-200">{selectedDay ? `Operaciones de ${selectedDay}` : 'Selecciona un día'}</h4>
+        <h4 className="mb-3 text-sm font-semibold text-slate-200">{selectedDay ? `Operaciones de ${formatDate(selectedDay)}` : 'Selecciona un día'}</h4>
         <div className="space-y-2">
           {activeTrades.map((trade) => (
             <div key={trade.id} className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-900/70 p-2 text-sm">
