@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 
-interface ChartWorkbenchProps {
+export interface ChartWorkbenchProps {
   symbol: string;
   day?: string; // opcional
 }
