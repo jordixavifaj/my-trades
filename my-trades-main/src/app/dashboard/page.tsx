@@ -3,8 +3,27 @@ import { TradingCalendar } from '@/components/TradingCalendar';
 import { getDashboardMetrics } from '@/lib/metrics';
 import { DashboardCharts } from '@/components/DashboardCharts';
 
+// ✅ Definimos tipo para data
+interface DashboardData {
+  summary: {
+    totalTrades: number;
+    closedTrades: number;
+    openTrades: number;
+    wins: number;
+    losses: number;
+    winRate: number;
+    totalPnl: number;
+    maxDrawdown: number;
+  };
+  pnlTimeline: { date: string; pnl: number }[];
+  strategyPerformance: any;  // según lo que devuelva tu función
+  equityCurve: any;           // según lo que devuelva tu función
+  tradesByDay: Record<string, any>;
+  calendarDays?: any;         // ✅ agregamos calendarDays como opcional
+}
+
 export default async function DashboardPage() {
-  const data = await getDashboardMetrics();
+  const data: DashboardData = await getDashboardMetrics();
 
   return (
     <AppShell>
@@ -23,7 +42,11 @@ export default async function DashboardPage() {
         <StatCard label="Max Drawdown" value={`$${data.summary.maxDrawdown.toFixed(2)}`} positive={false} />
       </div>
 
-      <DashboardCharts pnlTimeline={data.pnlTimeline} strategyPerformance={data.strategyPerformance} equityCurve={data.equityCurve} />
+      <DashboardCharts
+        pnlTimeline={data.pnlTimeline}
+        strategyPerformance={data.strategyPerformance}
+        equityCurve={data.equityCurve}
+      />
 
       <TradingCalendar days={data.calendarDays} tradesByDay={data.tradesByDay} />
     </AppShell>
