@@ -24,23 +24,24 @@ export function TradingCalendar({ days, tradesByDay }: { days: Array<{ date: str
     const startOffset = (first.getDay() + 6) % 7;
     const daysInMonth = new Date(year, month + 1, 0).getDate();
 
-    const items: Array<{ date: string; day: number; inMonth: boolean; pnl: number }> = [];
+    const items: Array<{ date: string; day: number; inMonth: boolean; pnl: number; trades: number }> = [];
 
-    for (let i = 0; i < startOffset; i += 1) items.push({ date: `off-${i}`, day: 0, inMonth: false, pnl: 0 });
+    for (let i = 0; i < startOffset; i += 1) items.push({ date: `off-${i}`, day: 0, inMonth: false, pnl: 0, trades: 0 });
 
     const map = new Map(days.map((d) => [d.date, d.pnl]));
+    const tradeCounts = new Map(Object.entries(tradesByDay).map(([date, trades]) => [date, trades.length]));
     for (let day = 1; day <= daysInMonth; day += 1) {
       const dt = new Date(Date.UTC(year, month, day));
       const date = dt.toISOString().slice(0, 10);
-      items.push({ date, day, inMonth: true, pnl: map.get(date) ?? 0 });
+      items.push({ date, day, inMonth: true, pnl: map.get(date) ?? 0, trades: tradeCounts.get(date) ?? 0 });
     }
 
     while (items.length % 7 !== 0) {
-      items.push({ date: `off-end-${items.length}`, day: 0, inMonth: false, pnl: 0 });
+      items.push({ date: `off-end-${items.length}`, day: 0, inMonth: false, pnl: 0, trades: 0 });
     }
 
     return items;
-  }, [cursor, days]);
+  }, [cursor, days, tradesByDay]);
 
   const activeTrades = selectedDay ? tradesByDay[selectedDay] ?? [] : [];
 
@@ -89,7 +90,8 @@ export function TradingCalendar({ days, tradesByDay }: { days: Array<{ date: str
             {item.inMonth && (
               <>
                 <p className="text-xs text-slate-300">{item.day}</p>
-                <p className={`mt-2 text-xs font-medium ${item.pnl >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{item.pnl.toFixed(0)}</p>
+                <p className={`mt-1 text-xs font-medium ${item.pnl >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{item.pnl.toFixed(0)}</p>
+                <p className="text-[10px] text-slate-400">{item.trades} trades</p>
               </>
             )}
           </button>

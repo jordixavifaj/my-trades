@@ -1,9 +1,12 @@
+import os from 'os';
+import path from 'path';
+import { promises as fs } from 'fs';
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { groupFillsIntoTrades, processDasTraderCSV } from '@/lib/csv-processor';
 import { requireRequestUser } from '@/lib/request-auth';
 import { createAuditLog } from '@/lib/audit';
-import { readSpreadsheetAsCsvLines } from '@/lib/spreadsheet-parser';
+import { buildTradesFromExecutions } from '@/lib/trade-builder';
+import { parseExecutionsFromXLS } from '@/lib/executions-parser';
 
 const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 const ALLOWED_EXTENSIONS = ['.csv', '.xls', '.xlsx'];
@@ -22,19 +25,10 @@ export async function POST(request: NextRequest) {
     const formData = await request.formData();
     const file = formData.get('file');
 
-    if (!(file instanceof File)) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
-    }
-
-    if (file.size === 0) {
-      return NextResponse.json({ error: 'Uploaded file is empty' }, { status: 400 });
-    }
-
+    if (!(file instanceof File)) return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+    if (file.size === 0) return NextResponse.json({ error: 'Uploaded file is empty' }, { status: 400 });
     if (file.size > MAX_FILE_SIZE_BYTES) {
-      return NextResponse.json(
-        { error: `File is too large. Max allowed size is ${MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB` },
-        { status: 413 },
-      );
+      return NextResponse.json({ error: `File is too large. Max allowed size is ${MAX_FILE_SIZE_BYTES / (1024 * 1024)}MB` }, { status: 413 });
     }
 
     const lower = file.name.toLowerCase();
@@ -42,93 +36,74 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'File must be CSV, XLS o XLSX' }, { status: 400 });
     }
 
-    const lines = lower.endsWith('.csv') ? await getFileLines(file) : await readSpreadsheetAsCsvLines(file);
-    const { fills, errors } = processDasTraderCSV(lines);
+    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'mt-upload-'));
+    const tempPath = path.join(tempDir, file.name);
 
-    if (fills.length === 0) {
-      return NextResponse.json(
-        { error: 'No valid fills found in file', validationErrors: errors.slice(0, 10) },
-        { status: 400 },
-      );
-    }
+    try {
+      const buffer = Buffer.from(await file.arrayBuffer());
+      await fs.writeFile(tempPath, buffer);
 
-    const tradeGroups = groupFillsIntoTrades(fills);
-    const savedTrades = await prisma.$transaction(
-      tradeGroups.map((tradeGroup) => {
-        const firstFill = tradeGroup.fills[0];
-        const lastFill = tradeGroup.fills[tradeGroup.fills.length - 1];
+      const executions = await parseExecutionsFromXLS(tempPath);
+      if (executions.length === 0) {
+        return NextResponse.json({ error: 'No valid executions found in file' }, { status: 400 });
+      }
 
-        const pnl =
-          tradeGroup.status === 'CLOSED'
-            ? tradeGroup.fills.reduce((sum, fill) => {
-                const direction = fill.side === 'SELL' ? 1 : -1;
-                return sum + direction * fill.price * fill.quantity;
-              }, 0)
-            : null;
+      const trades = buildTradesFromExecutions(executions);
+      if (trades.length === 0) {
+        return NextResponse.json({ error: 'No closed trades found in file' }, { status: 400 });
+      }
 
-        return prisma.trade.create({
-          data: {
-            userId: user.id,
-            symbol: tradeGroup.symbol,
-            status: tradeGroup.status,
-            openDate: firstFill.timestamp,
-            closeDate: tradeGroup.status === 'CLOSED' ? lastFill.timestamp : null,
-            openPrice: firstFill.price,
-            closePrice: tradeGroup.status === 'CLOSED' ? lastFill.price : null,
-            quantity: tradeGroup.quantity,
-            side: tradeGroup.side,
-            pnl,
-            commission: tradeGroup.totalCommission,
-            fills: {
-              create: tradeGroup.fills.map((fill) => ({
-                symbol: fill.symbol,
-                price: fill.price,
-                quantity: fill.quantity,
-                side: fill.side,
-                timestamp: fill.timestamp,
-                commission: fill.commission,
-              })),
+      const savedTrades = await prisma.$transaction(
+        trades.map((trade) =>
+          prisma.trade.create({
+            data: {
+              userId: user.id,
+              symbol: trade.symbol,
+              status: 'CLOSED',
+              openDate: trade.entryTime,
+              closeDate: trade.exitTime,
+              openPrice: trade.entryPrice,
+              closePrice: trade.exitPrice,
+              quantity: Math.round(trade.size),
+              side: trade.side === 'LONG' ? 'BUY' : 'SELL',
+              pnl: trade.pnl + trade.executions.reduce((sum, fill) => sum + fill.commission, 0),
+              commission: trade.executions.reduce((sum, fill) => sum + fill.commission, 0),
+              fills: {
+                create: trade.executions.map((fill) => ({
+                  symbol: fill.symbol,
+                  price: fill.price,
+                  quantity: Math.round(fill.quantity),
+                  side: fill.side,
+                  timestamp: fill.timestamp,
+                  commission: fill.commission,
+                })),
+              },
             },
-          },
-          include: {
-            fills: true,
-          },
-        });
-      }),
-    );
+            include: { fills: true },
+          }),
+        ),
+      );
 
-    await createAuditLog({
-      userId: user.id,
-      action: 'UPLOAD_TRADES',
-      reason: `Imported ${savedTrades.length} trades from ${file.name}`,
-      newValue: { fileName: file.name, trades: savedTrades.length, errors: errors.length },
-    });
+      await createAuditLog({
+        userId: user.id,
+        action: 'UPLOAD_TRADES',
+        reason: `Imported ${savedTrades.length} trades from ${file.name}`,
+        newValue: { fileName: file.name, trades: savedTrades.length, executions: executions.length },
+      });
 
-    return NextResponse.json({
-      message: 'Archivo procesado correctamente',
-      stats: {
-        totalFills: fills.length,
-        totalTrades: tradeGroups.length,
-        closedTrades: tradeGroups.filter((trade) => trade.status === 'CLOSED').length,
-        openTrades: tradeGroups.filter((trade) => trade.status === 'OPEN').length,
-        skippedRows: errors.length,
-      },
-      validationErrors: errors.slice(0, 10),
-      trades: savedTrades,
-    });
+      return NextResponse.json({
+        message: 'Archivo XLS procesado correctamente',
+        stats: {
+          totalExecutions: executions.length,
+          totalTrades: savedTrades.length,
+        },
+        trades: savedTrades,
+      });
+    } finally {
+      await fs.rm(tempDir, { recursive: true, force: true });
+    }
   } catch (error) {
     console.error('Error processing upload:', error);
-
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : 'Internal server error while processing upload',
-      },
-      { status: 500 },
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : 'Internal server error while processing upload' }, { status: 500 });
   }
-}
-
-async function getFileLines(file: File) {
-  const text = await file.text();
-  return text.split(/\r?\n/);
 }
