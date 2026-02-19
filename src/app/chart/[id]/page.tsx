@@ -1,10 +1,10 @@
 import { AppShell } from '@/components/AppShell';
-import { ChartWorkbench } from '@/components/ChartWorkbench';
+import { ChartLabWorkspace } from '@/components/ChartLabWorkspace';
 
 export default function ChartDetailPage({ params }: { params: { id: string } }) {
   return (
     <AppShell>
-      <ChartWorkbench symbol={params.id} />
+      <ChartLabWorkspace initialSymbol={params.id} />
     </AppShell>
   );
 }
