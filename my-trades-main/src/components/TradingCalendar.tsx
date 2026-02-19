@@ -25,25 +25,9 @@ type CalendarTrade = {
 
 export function TradingCalendar({ days, tradesByDay }: { days: Array<{ date: string; pnl: number; tradeCount: number }>; tradesByDay: Record<string, CalendarTrade[]> }) {
   const [cursor, setCursor] = useState(() => {
-    const last = days
-      .filter((d) => d.tradeCount > 0)
-      .map((d) => d.date)
-      .sort((a, b) => a.localeCompare(b))
-      .at(-1);
-
-    if (last) {
-      const match = last.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-      if (match) {
-        const y = Number.parseInt(match[1], 10);
-        const m = Number.parseInt(match[2], 10);
-
-        if (Number.isFinite(y) && Number.isFinite(m) && y >= 2000 && y <= 2100 && m >= 1 && m <= 12) {
-          return new Date(y, m - 1, 1);
-        }
-      }
-    }
-
-    return new Date(2026, 0, 1); // Enero 2026 como fecha por defecto
+    // Siempre mostrar el mes actual
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth(), 1);
   });
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
 
