@@ -1,0 +1,139 @@
+import { Execution } from '@/lib/executions-parser';
+
+export interface Trade {
+  id: string;
+  symbol: string;
+  side: 'LONG' | 'SHORT';
+  size: number;
+  entryPrice: number;
+  exitPrice: number;
+  entryTime: Date;
+  exitTime: Date;
+  pnl: number;
+  executions: Execution[];
+}
+
+export interface CalendarDay {
+  date: string;
+  totalTrades: number;
+  totalPnl: number;
+  trades: Trade[];
+}
+
+export function buildTradesFromExecutions(executions: Execution[]): Trade[] {
+  const grouped = new Map<string, Execution[]>();
+
+  for (const execution of executions) {
+    const key = `${execution.account}::${execution.symbol}`;
+    if (!grouped.has(key)) grouped.set(key, []);
+    grouped.get(key)!.push(execution);
+  }
+
+  const trades: Trade[] = [];
+
+  for (const [key, symbolExecutions] of Array.from(grouped.entries())) {
+    symbolExecutions.sort((a: Execution, b: Execution) => a.timestamp.getTime() - b.timestamp.getTime());
+
+    let positionSize = 0;
+    let avgEntryPrice = 0;
+    let entryTime: Date | null = null;
+    let side: 'LONG' | 'SHORT' | null = null;
+    let openExecutions: Execution[] = [];
+    let runningCommission = 0;
+    let tradeSequence = 1;
+
+    const flushClose = (closingExecution: Execution, closeQty: number, closePrice: number, closeCommission: number) => {
+      if (!side || !entryTime || closeQty <= 0) return;
+      const gross = side === 'LONG' ? (closePrice - avgEntryPrice) * closeQty : (avgEntryPrice - closePrice) * closeQty;
+      const pnl = gross - closeCommission;
+      trades.push({
+        id: `${key}-${tradeSequence}`,
+        symbol: closingExecution.symbol,
+        side,
+        size: closeQty,
+        entryPrice: avgEntryPrice,
+        exitPrice: closePrice,
+        entryTime,
+        exitTime: closingExecution.timestamp,
+        pnl,
+        executions: [...openExecutions, { ...closingExecution, quantity: closeQty, commission: closeCommission }],
+      });
+      tradeSequence += 1;
+    };
+
+    for (const execution of symbolExecutions) {
+      let remainingQty = execution.quantity;
+      const signedQty = execution.side === 'BUY' ? execution.quantity : -execution.quantity;
+      const executionSign = Math.sign(signedQty);
+
+      if (positionSize === 0) {
+        positionSize = signedQty;
+        avgEntryPrice = execution.price;
+        entryTime = execution.timestamp;
+        side = positionSize > 0 ? 'LONG' : 'SHORT';
+        openExecutions = [execution];
+        runningCommission = execution.commission;
+        continue;
+      }
+
+      const sameDirection = Math.sign(positionSize) === executionSign;
+      if (sameDirection) {
+        const newAbs = Math.abs(positionSize) + remainingQty;
+        avgEntryPrice = (avgEntryPrice * Math.abs(positionSize) + execution.price * remainingQty) / newAbs;
+        positionSize += signedQty;
+        openExecutions.push(execution);
+        runningCommission += execution.commission;
+        continue;
+      }
+
+      const closeQty = Math.min(Math.abs(positionSize), remainingQty);
+      const commissionPerUnit = execution.commission / execution.quantity;
+      const closeCommission = runningCommission + commissionPerUnit * closeQty;
+      flushClose(execution, closeQty, execution.price, closeCommission);
+
+      const afterClose = Math.abs(positionSize) - closeQty;
+      const leftoverQty = remainingQty - closeQty;
+
+      if (afterClose > 0) {
+        positionSize = Math.sign(positionSize) * afterClose;
+        runningCommission = 0;
+        openExecutions = [];
+        entryTime = execution.timestamp;
+      } else {
+        positionSize = 0;
+        avgEntryPrice = 0;
+        entryTime = null;
+        side = null;
+        openExecutions = [];
+        runningCommission = 0;
+      }
+
+      if (leftoverQty > 0) {
+        const openCommission = commissionPerUnit * leftoverQty;
+        positionSize = execution.side === 'BUY' ? leftoverQty : -leftoverQty;
+        avgEntryPrice = execution.price;
+        entryTime = execution.timestamp;
+        side = positionSize > 0 ? 'LONG' : 'SHORT';
+        openExecutions = [{ ...execution, quantity: leftoverQty, commission: openCommission }];
+        runningCommission = openCommission;
+      }
+    }
+  }
+
+  return trades.sort((a, b) => a.exitTime.getTime() - b.exitTime.getTime());
+}
+
+export function groupTradesByDay(trades: Trade[]): CalendarDay[] {
+  const grouped = new Map<string, CalendarDay>();
+
+  for (const trade of trades) {
+    const date = trade.exitTime.toISOString().slice(0, 10);
+    if (!grouped.has(date)) grouped.set(date, { date, totalTrades: 0, totalPnl: 0, trades: [] });
+    const day = grouped.get(date)!;
+    day.totalTrades += 1;
+    day.totalPnl += trade.pnl;
+    day.trades.push(trade);
+  }
+
+  return Array.from(grouped.values()).sort((a, b) => a.date.localeCompare(b.date));
+}

@@ -1,0 +1,39 @@
+{
+  "name": "my-trades",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "next lint",
+    "typecheck": "tsc --noEmit",
+    "seed": "node prisma/seed.js",
+    "check": "npm run lint && npm run typecheck && npm run build",
+    "e2e:smoke": "bash scripts/e2e-smoke.sh",
+    "setup:login": "npx prisma db push && npm run seed"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.19.1",
+    "cheerio": "^1.2.0",
+    "date-fns": "^3.6.0",
+    "next": "14.2.5",
+    "react": "^18",
+    "react-dom": "^18",
+    "recharts": "^3.7.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/cheerio": "^0.22.35",
+    "@types/node": "^20",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "@types/xlsx": "^0.0.35",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.5",
+    "postcss": "^8",
+    "prisma": "^5.19.1",
+    "tailwindcss": "^3.4.1",
+    "typescript": "^5"
+  }
+}

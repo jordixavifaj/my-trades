@@ -1,0 +1,96 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String?
+  email        String   @unique
+  passwordHash String?
+  role         String   @default("TRADER")
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  trades       Trade[]
+  auditLogs    AuditLog[]
+
+  @@map("users")
+}
+
+model Strategy {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  trades      Trade[]
+
+  @@map("strategies")
+}
+
+model Trade {
+  id          String      @id @default(cuid())
+  userId      String?
+  strategyId  String?
+  symbol      String
+  status      String @default("OPEN")
+  openDate    DateTime
+  closeDate   DateTime?
+  openPrice   Float
+  closePrice  Float?
+  quantity    Int
+  side        String
+  pnl         Float?
+  commission  Float
+  notes       String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  fills       Fill[]
+  user        User?       @relation(fields: [userId], references: [id], onDelete: SetNull)
+  strategy    Strategy?   @relation(fields: [strategyId], references: [id], onDelete: SetNull)
+  auditLogs   AuditLog[]
+
+  @@index([symbol, openDate])
+  @@index([status, closeDate])
+  @@index([strategyId])
+  @@map("trades")
+}
+
+model Fill {
+  id         String   @id @default(cuid())
+  tradeId    String
+  symbol     String
+  price      Float
+  quantity   Int
+  side       String
+  timestamp  DateTime
+  commission Float
+  createdAt  DateTime @default(now())
+  trade      Trade    @relation(fields: [tradeId], references: [id], onDelete: Cascade)
+
+  @@index([symbol, timestamp])
+  @@map("fills")
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId       String?
+  tradeId      String?
+  action       String
+  reason       String?
+  oldValueJson String?
+  newValueJson String?
+  createdAt    DateTime @default(now())
+  user         User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  trade        Trade?   @relation(fields: [tradeId], references: [id], onDelete: SetNull)
+
+  @@index([tradeId, createdAt])
+  @@map("audit_logs")
+}
+

@@ -1,0 +1,20 @@
+# Comandos Git para subir tus cambios al repositorio
+
+# 1. Verificar estado
+git status
+
+# 2. Añadir todos los cambios
+git add .
+
+# 3. Hacer commit con mensaje
+git commit -m "feat: add TradingView market data integration with user trades overlay"
+
+# 4. Subir al repositorio
+git push
+
+# Si es la primera vez, configura tu usuario:
+git config --global user.name "Tu Nombre"
+git config --global user.email "tu@email.com"
+
+# Si necesitas hacer push a una rama específica:
+git push origin main
