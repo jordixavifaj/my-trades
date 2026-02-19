@@ -7,6 +7,7 @@ const links = [
   { href: '/trades', label: 'Trades' },
   { href: '/reports', label: 'Reports' },
   { href: '/chart/SPY', label: 'Chart Lab' },
+  { href: '/tickers-intelligence', label: 'Tickers Intelligence' },
   { href: '/auth', label: 'Auth' },
 ];
 
