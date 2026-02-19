@@ -23,7 +23,7 @@ Trading journal application built with Next.js 14, TypeScript, TailwindCSS, Pris
 
 ```bash
 npm install
-cp .env.example .env.local
+cp .env.example .env
 ```
 
 Set at least:
@@ -42,6 +42,20 @@ npm run seed
 ```
 
 > Si prefieres migraciones versionadas, puedes usar `npx prisma migrate dev`.
+
+### Solución rápida para "Error interno en login"
+
+Si el login devuelve `Error interno en login`, normalmente es porque falta `.env` o la base SQLite no está inicializada.
+
+```bash
+cp .env.example .env
+npm run setup:login
+```
+
+Esto deja creado el usuario administrador de prueba:
+
+- Email: `admin@mytrades.local`
+- Password: `admin123`
 
 ### Run
 

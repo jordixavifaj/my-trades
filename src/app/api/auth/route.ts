@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { Prisma } from '@prisma/client';
 import { prisma } from '@/lib/prisma';
 import { createSessionToken, sessionCookie, toSessionRole, verifyPassword } from '@/lib/auth';
 
@@ -65,6 +66,21 @@ export async function POST(request: NextRequest) {
     return response;
   } catch (error) {
     console.error('POST /api/auth failed', error);
+
+    if (error instanceof Prisma.PrismaClientInitializationError) {
+      return NextResponse.json(
+        { error: 'Configuración de base de datos inválida. Revisa DATABASE_URL en el archivo .env.' },
+        { status: 500 },
+      );
+    }
+
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2021') {
+      return NextResponse.json(
+        { error: 'Base de datos no inicializada. Ejecuta: npx prisma db push && npm run seed' },
+        { status: 500 },
+      );
+    }
+
     return NextResponse.json({ error: 'Error interno en login' }, { status: 500 });
   }
 }
