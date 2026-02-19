@@ -3,8 +3,8 @@ import { CSVProcessingResult, ProcessedFill } from '@/types/trading';
 
 const HEADER_ALIASES: Record<string, string[]> = {
   symbol: ['symbol', 'ticker'],
-  timestamp: ['time/date', 'timestamp', 'date', 'time'],
-  side: ['side', 'action'],
+  timestamp: ['time/date', 'date/time', 'timestamp', 'date', 'time'],
+  side: ['side', 'action', 'b/s'],
   price: ['price', 'fill price'],
   quantity: ['quantity', 'qty', 'shares'],
   commission: ['commission', 'comm'],
@@ -12,12 +12,13 @@ const HEADER_ALIASES: Record<string, string[]> = {
 
 export function processDasTraderCSV(csvData: string[]): CSVProcessingResult {
   const lines = csvData.map((line) => line.trim()).filter(Boolean);
+  const delimiter = detectDelimiter(lines[0] ?? '');
 
   if (lines.length < 2) {
     return { fills: [], errors: [{ line: 1, reason: 'CSV file is empty or missing data rows' }] };
   }
 
-  const headerFields = parseCSVLine(lines[0]).map(normalizeHeader);
+  const headerFields = parseDelimitedLine(lines[0], delimiter).map(normalizeHeader);
   const headerMap = buildHeaderMap(headerFields);
   const missingColumns = getMissingColumns(headerMap);
 
@@ -35,12 +36,12 @@ export function processDasTraderCSV(csvData: string[]): CSVProcessingResult {
     const rawLine = lines[i];
     if (!rawLine) continue;
 
-    const fields = parseCSVLine(rawLine);
+    const fields = parseDelimitedLine(rawLine, delimiter);
 
     try {
       const symbol = getField(fields, headerMap.symbol).toUpperCase();
       const sideRaw = getField(fields, headerMap.side).toUpperCase();
-      const side = sideRaw === 'BUY' || sideRaw === 'SELL' ? sideRaw : null;
+      const side = sideRaw === 'BUY' || sideRaw === 'B' ? 'BUY' : sideRaw === 'SELL' || sideRaw === 'S' ? 'SELL' : null;
       const price = parseSafeFloat(getField(fields, headerMap.price));
       const quantity = parseSafeInt(getField(fields, headerMap.quantity));
       const commission = parseSafeFloat(getField(fields, headerMap.commission), 0);
@@ -114,8 +115,19 @@ function normalizeHeader(header: string): string {
 }
 
 function parseSafeFloat(value: string, fallback = Number.NaN): number {
-  const parsed = Number.parseFloat(value.replace(/[$,]/g, ''));
-  return Number.isFinite(parsed) ? parsed : fallback;
+  let normalized = value.trim();
+  const isNegative = normalized.startsWith('(') && normalized.endsWith(')');
+  normalized = normalized.replace(/[()$€\s]/g, '');
+
+  if (normalized.includes(',') && !normalized.includes('.')) {
+    normalized = normalized.replace(/,/g, '.');
+  } else {
+    normalized = normalized.replace(/,/g, '');
+  }
+
+  const parsed = Number.parseFloat(normalized);
+  const signed = isNegative ? -parsed : parsed;
+  return Number.isFinite(signed) ? signed : fallback;
 }
 
 function parseSafeInt(value: string): number {
@@ -123,7 +135,13 @@ function parseSafeInt(value: string): number {
   return Number.isFinite(parsed) ? parsed : Number.NaN;
 }
 
-function parseCSVLine(line: string): string[] {
+function detectDelimiter(line: string): ',' | '\t' {
+  const commas = (line.match(/,/g) || []).length;
+  const tabs = (line.match(/\t/g) || []).length;
+  return tabs > commas ? '\t' : ',';
+}
+
+function parseDelimitedLine(line: string, delimiter: ',' | '\t'): string[] {
   const result: string[] = [];
   let current = '';
   let inQuotes = false;
@@ -143,7 +161,7 @@ function parseCSVLine(line: string): string[] {
       continue;
     }
 
-    if (char === ',' && !inQuotes) {
+    if (char === delimiter && !inQuotes) {
       result.push(current.trim());
       current = '';
       continue;

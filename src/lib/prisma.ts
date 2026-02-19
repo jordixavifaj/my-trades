@@ -4,11 +4,22 @@ const globalForPrisma = globalThis as unknown as {
   prisma: PrismaClient | undefined;
 };
 
+function resolveDatabaseUrl() {
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+
+  return 'file:./dev.db';
+}
+
 function createPrismaClient() {
-  if (!process.env.DATABASE_URL) {
-    throw new Error('DATABASE_URL no está configurada. Para desarrollo usa DATABASE_URL="file:./dev.db" (SQLite) en .env.local.');
-  }
-  return new PrismaClient();
+  const databaseUrl = resolveDatabaseUrl();
+
+  return new PrismaClient({
+    datasources: {
+      db: {
+        url: databaseUrl,
+      },
+    },
+  });
 }
 
 export const prisma = globalForPrisma.prisma ?? createPrismaClient();
