@@ -3,11 +3,14 @@ import { createHash, createHmac, pbkdf2Sync, randomBytes, timingSafeEqual } from
 export type SessionUser = {
   id: string;
   email: string;
-  role: 'ADMIN' | 'TRADER';
+  role: 'ADMIN' | 'TRADER' | 'MENTOR' | 'STUDENT';
 };
 
 export function toSessionRole(role: string | null | undefined): SessionUser['role'] {
-  return role === 'ADMIN' ? 'ADMIN' : 'TRADER';
+  if (role === 'ADMIN') return 'ADMIN';
+  if (role === 'MENTOR') return 'MENTOR';
+  if (role === 'STUDENT') return 'STUDENT';
+  return 'TRADER';
 }
 
 

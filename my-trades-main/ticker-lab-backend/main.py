@@ -141,29 +141,48 @@ def fetch_polygon_profile(symbol: str) -> Dict[str, Any]:
     return payload
 
 
+def _map_exchange_to_google(exchange: Optional[str]) -> Optional[str]:
+    """Map exchange names from Yahoo/Finviz/Polygon to Google Finance format."""
+    if not exchange:
+        return None
+    ex = exchange.upper().strip()
+    mapping = {
+        "XNAS": "NASDAQ", "NASDAQ": "NASDAQ", "NASD": "NASDAQ", "NMS": "NASDAQ", "NGM": "NASDAQ", "NCM": "NASDAQ",
+        "XNYS": "NYSE", "NYSE": "NYSE", "NYQ": "NYSE",
+        "XASE": "NYSEAMERICAN", "AMEX": "NYSEAMERICAN", "ASE": "NYSEAMERICAN",
+        "XBOS": "NYSEARCA", "ARCA": "NYSEARCA", "PCX": "NYSEARCA",
+    }
+    return mapping.get(ex)
+
+
 def fetch_google_finance_ebitda(symbol: str, exchange: Optional[str]) -> Dict[str, Any]:
     cache_key = ("google_finance_ebitda", symbol, exchange)
     if cache_key in PROFILE_CACHE:
         return PROFILE_CACHE[cache_key]
 
-    exch = None
-    if exchange:
-        ex = exchange.upper()
-        if ex in ("XNAS", "NASDAQ"):
-            exch = "NASDAQ"
-        elif ex in ("XNYS", "NYSE"):
-            exch = "NYSE"
+    exch = _map_exchange_to_google(exchange)
 
     candidates = []
     if exch:
         candidates.append(f"{symbol}:{exch}")
-    candidates.append(symbol)
+    # Common US exchanges as fallback
+    for fb in ["NASDAQ", "NYSE", "NYSEAMERICAN"]:
+        cand = f"{symbol}:{fb}"
+        if cand not in candidates:
+            candidates.append(cand)
 
-    headers = {"User-Agent": "Mozilla/5.0"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    cookies = {
+        "CONSENT": "YES+cb.20210720-07-p0.en+FX+111",
+        "SOCS": "CAISHAgCEhJnd3NfMjAyMzA4MTAtMF9SQzIaAmVuIAEaBgiAo_CmBg",
+    }
     for c in candidates:
-        url = f"https://www.google.com/finance/quote/{c}"
+        url = f"https://www.google.com/finance/quote/{c}?gl=US&hl=en"
         try:
-            with httpx.Client(timeout=15.0, headers=headers) as client:
+            with httpx.Client(timeout=15.0, headers=headers, follow_redirects=True, cookies=cookies) as client:
                 resp = client.get(url)
                 if resp.status_code != 200:
                     continue
@@ -171,59 +190,250 @@ def fetch_google_finance_ebitda(symbol: str, exchange: Optional[str]) -> Dict[st
         except Exception:
             continue
 
-        m = re.search(r"EBITDA\s*([0-9.,]+\s*[KMBT]?)", html, re.IGNORECASE)
-        if not m:
-            m = re.search(r">EBITDA<[^>]*>\s*<[^>]*>([0-9.,]+\s*[KMBT]?)<", html, re.IGNORECASE)
-        if m:
-            ebitda = _parse_human_number(m.group(1).replace(" ", ""))
-            if ebitda is not None:
-                payload = {"ok": True, "ebitda": ebitda, "sourceUrl": url, "error": None}
-                PROFILE_CACHE[cache_key] = payload
-                return payload
+        # Try multiple regex patterns for EBITDA extraction
+        ebitda_patterns = [
+            r"EBITDA[^<]*?<[^>]*>([0-9.,]+\s*[KMBT]?)\s*(USD)?",
+            r">EBITDA<[^>]*>\s*(?:<[^>]*>)*\s*([0-9.,]+\s*[KMBT]?)",
+            r"EBITDA\s*</[^>]+>\s*<[^>]+>\s*([0-9.,]+\s*[KMBT]?)",
+            r"EBITDA\s*([0-9.,]+\s*[KMBT]?)",
+            r"data-[^>]*EBITDA[^>]*>([0-9.,]+\s*[KMBT]?)<",
+        ]
+        for pattern in ebitda_patterns:
+            m = re.search(pattern, html, re.IGNORECASE | re.DOTALL)
+            if m:
+                ebitda = _parse_human_number(m.group(1).replace(" ", "").strip())
+                if ebitda is not None:
+                    logger.info("google finance EBITDA found", extra={"symbol": symbol, "url": url, "ebitda": ebitda})
+                    payload = {"ok": True, "ebitda": ebitda, "sourceUrl": url, "error": None}
+                    PROFILE_CACHE[cache_key] = payload
+                    return payload
 
     payload = {"ok": False, "ebitda": None, "sourceUrl": None, "error": "EBITDA not found in Google Finance"}
     PROFILE_CACHE[cache_key] = payload
     return payload
 
 
-def fetch_finviz_short_interest(symbol: str) -> Dict[str, Any]:
-    cache_key = ("finviz_short_interest", symbol)
+def fetch_finviz_ebitda(symbol: str) -> Optional[float]:
+    """Try to extract EBITDA from Finviz snapshot table only (avoids false positives)."""
+    soup, _url, _err = _fetch_finviz_soup(symbol)
+    if soup is None:
+        return None
+    # Only trust the structured snapshot table, not full-text regex
+    for table in soup.find_all("table", class_="snapshot-table2"):
+        cells = table.find_all("td")
+        for i in range(0, len(cells) - 1, 2):
+            label = cells[i].get_text(strip=True)
+            if label.upper() == "EBITDA":
+                val = cells[i + 1].get_text(strip=True)
+                if val and val != "-":
+                    return _parse_human_number(val)
+    return None
+
+
+def _fetch_finviz_soup(symbol: str) -> Tuple[Optional[BeautifulSoup], str, Optional[str]]:
+    """Fetch and cache the Finviz HTML page for a symbol."""
+    cache_key = ("finviz_html", symbol)
     if cache_key in PROFILE_CACHE:
         return PROFILE_CACHE[cache_key]
 
-    url = f"https://finviz.com/quote.ashx?t={symbol}"
-    headers = {"User-Agent": "Mozilla/5.0", "Accept-Language": "en-US,en;q=0.9"}
+    url = f"https://finviz.com/quote.ashx?t={symbol}&p=d"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Referer": "https://finviz.com/",
+    }
     try:
-        with httpx.Client(timeout=15.0, headers=headers) as client:
+        with httpx.Client(timeout=20.0, headers=headers, follow_redirects=True) as client:
             resp = client.get(url)
             if resp.status_code != 200:
-                payload = {"ok": False, "shortInterestPercent": None, "sourceUrl": url, "error": f"HTTP {resp.status_code}"}
-                PROFILE_CACHE[cache_key] = payload
-                return payload
+                result = (None, url, f"HTTP {resp.status_code}")
+                PROFILE_CACHE[cache_key] = result
+                return result
             soup = BeautifulSoup(resp.text, "html.parser")
+            result = (soup, url, None)
+            PROFILE_CACHE[cache_key] = result
+            return result
     except Exception as e:
-        logger.exception("finviz scrape failed", extra={"symbol": symbol})
-        payload = {"ok": False, "shortInterestPercent": None, "sourceUrl": url, "error": f"Exception {type(e).__name__}"}
-        PROFILE_CACHE[cache_key] = payload
-        return payload
+        logger.exception("finviz page fetch failed", extra={"symbol": symbol})
+        result = (None, url, f"Exception {type(e).__name__}")
+        PROFILE_CACHE[cache_key] = result
+        return result
 
-    text = soup.get_text(" ")
-    m = re.search(r"Short Float\s*([0-9.]+)%", text, re.IGNORECASE)
-    if not m:
-        payload = {"ok": False, "shortInterestPercent": None, "sourceUrl": url, "error": "Short Float not found"}
-        PROFILE_CACHE[cache_key] = payload
-        return payload
 
-    try:
-        pct = float(m.group(1))
-    except Exception:
-        payload = {"ok": False, "shortInterestPercent": None, "sourceUrl": url, "error": "Parse error"}
-        PROFILE_CACHE[cache_key] = payload
-        return payload
+def fetch_finviz_profile(symbol: str) -> Dict[str, Any]:
+    """Scrape comprehensive profile from Finviz: Exchange, Sector, Industry, Country, Market Cap, Float, Short %."""
+    cache_key = ("finviz_profile", symbol)
+    if cache_key in PROFILE_CACHE:
+        return PROFILE_CACHE[cache_key]
 
-    payload = {"ok": True, "shortInterestPercent": pct, "sourceUrl": url, "error": None}
-    PROFILE_CACHE[cache_key] = payload
-    return payload
+    soup, url, fetch_err = _fetch_finviz_soup(symbol)
+
+    result: Dict[str, Any] = {
+        "ok": False,
+        "symbol": symbol,
+        "exchange": None,
+        "sector": None,
+        "industry": None,
+        "country": None,
+        "marketCap": None,
+        "float": None,
+        "shortInterestPercent": None,
+        "sourceUrl": url,
+        "error": fetch_err,
+    }
+
+    if soup is None:
+        PROFILE_CACHE[cache_key] = result
+        return result
+
+    # --- Snapshot table (financial metrics) ---
+    snapshot: Dict[str, str] = {}
+    for table in soup.find_all("table", class_="snapshot-table2"):
+        cells = table.find_all("td")
+        for i in range(0, len(cells) - 1, 2):
+            label = cells[i].get_text(strip=True)
+            value = cells[i + 1].get_text(strip=True)
+            if label:
+                snapshot[label] = value
+
+    # --- Header links (Sector | Industry | Country | Exchange) ---
+    for a in soup.find_all("a", class_="tab-link"):
+        href = a.get("href", "")
+        text = a.get_text(strip=True)
+        if not text or text == "-":
+            continue
+        if "f=sec_" in href:
+            result["sector"] = text
+        elif "f=ind_" in href:
+            result["industry"] = text
+        elif "f=geo_" in href:
+            result["country"] = text
+        elif "f=exch_" in href:
+            result["exchange"] = text
+
+    # Exchange fallback from snapshot Index field
+    if not result["exchange"]:
+        idx = snapshot.get("Index", "")
+        if idx and idx != "-":
+            result["exchange"] = idx
+
+    # Market Cap
+    mc = snapshot.get("Market Cap", "")
+    if mc and mc != "-":
+        result["marketCap"] = _parse_human_number(mc)
+
+    # Float (Shs Float)
+    fl = snapshot.get("Shs Float", "")
+    if fl and fl != "-":
+        result["float"] = _parse_human_number(fl)
+
+    # Short Interest %
+    sf = snapshot.get("Short Float / Ratio", "") or snapshot.get("Short Float", "")
+    if sf and sf != "-":
+        m = re.match(r"([0-9.]+)%", sf)
+        if m:
+            try:
+                result["shortInterestPercent"] = float(m.group(1))
+            except Exception:
+                pass
+
+    # Fallback: regex on full text
+    if result["shortInterestPercent"] is None:
+        text = soup.get_text(" ")
+        m = re.search(r"Short Float\s*([0-9.]+)%", text, re.IGNORECASE)
+        if m:
+            try:
+                result["shortInterestPercent"] = float(m.group(1))
+            except Exception:
+                pass
+
+    logger.info(
+        "finviz profile scraped",
+        extra={
+            "symbol": symbol,
+            "exchange": result["exchange"],
+            "sector": result["sector"],
+            "industry": result["industry"],
+            "country": result["country"],
+            "marketCap": result["marketCap"],
+            "float": result["float"],
+            "shortInterestPercent": result["shortInterestPercent"],
+        },
+    )
+
+    result["error"] = None
+    result["ok"] = any(
+        result.get(k) is not None
+        for k in ["exchange", "sector", "industry", "country", "marketCap", "float", "shortInterestPercent"]
+    )
+
+    PROFILE_CACHE[cache_key] = result
+    return result
+
+
+def fetch_finviz_news(symbol: str) -> List[Dict[str, Any]]:
+    """Scrape recent news headlines from Finviz news table."""
+    cache_key = ("finviz_news", symbol)
+    if cache_key in PROFILE_CACHE:
+        return PROFILE_CACHE[cache_key]
+
+    soup, _url, _err = _fetch_finviz_soup(symbol)
+    if soup is None:
+        PROFILE_CACHE[cache_key] = []
+        return []
+
+    news_table = soup.find("table", id="news-table")
+    if not news_table:
+        PROFILE_CACHE[cache_key] = []
+        return []
+
+    items: List[Dict[str, Any]] = []
+    current_date_str: Optional[str] = None
+    today = datetime.utcnow().date()
+    cutoff = today - timedelta(days=3)
+
+    for row in news_table.find_all("tr"):
+        cells = row.find_all("td")
+        if len(cells) < 2:
+            continue
+
+        date_cell = cells[0].get_text(strip=True)
+        link_el = cells[1].find("a")
+        if not link_el:
+            continue
+
+        title = link_el.get_text(strip=True)
+        href = link_el.get("href", "")
+        source_span = cells[1].find("span")
+        source = source_span.get_text(strip=True).strip("()") if source_span else "Finviz"
+
+        # Date parsing: "Feb-20-26 09:30AM" or just "09:30AM"
+        date_match = re.match(r"([A-Z][a-z]{2}-\d{2}-\d{2})", date_cell)
+        if date_match:
+            current_date_str = date_match.group(1)
+
+        pub_date = None
+        if current_date_str:
+            try:
+                pub_date = datetime.strptime(current_date_str, "%b-%d-%y").date()
+            except Exception:
+                pass
+
+        # Filter: only last 3 days
+        if pub_date and pub_date < cutoff:
+            continue
+
+        items.append({
+            "title": title,
+            "description": None,
+            "url": href,
+            "source": source,
+            "publishedAt": pub_date.isoformat() if pub_date else None,
+        })
+
+    PROFILE_CACHE[cache_key] = items
+    return items
 
 
 def fetch_polygon_news(symbol: str) -> Dict[str, Any]:
@@ -520,19 +730,68 @@ def fetch_knowthefloat(symbol: str) -> Dict[str, Any]:
 
 
 def fetch_dilutiontracker(symbol: str) -> Dict[str, Any]:
-    # NOTE: DilutionTracker is often paywalled / protected. Provide stub.
+    """Scrape dilution info from DilutionTracker (best-effort, may be paywalled)."""
     cache_key = ("dilution", symbol)
     if cache_key in PROFILE_CACHE:
         return PROFILE_CACHE[cache_key]
 
-    payload = {
+    url = f"https://dilutiontracker.com/app/search/{symbol.upper()}"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+
+    result: Dict[str, Any] = {
         "symbol": symbol,
         "dilutionInfo": None,
         "ok": False,
-        "note": "DilutionTracker data source requires integration details (auth/subscription).",
+        "sourceUrl": url,
+        "error": None,
+        "note": None,
     }
-    PROFILE_CACHE[cache_key] = payload
-    return payload
+
+    try:
+        with httpx.Client(timeout=15.0, headers=headers, follow_redirects=True) as client:
+            resp = client.get(url)
+            if resp.status_code != 200:
+                result["error"] = f"HTTP {resp.status_code}"
+                PROFILE_CACHE[cache_key] = result
+                return result
+
+            soup = BeautifulSoup(resp.text, "html.parser")
+            text = soup.get_text(" ", strip=True)
+
+            # Try to find dilution-related info snippets
+            dilution_patterns = [
+                r"(ATM\s+offering[^.]{5,120}\.)",
+                r"(shelf\s+registration[^.]{5,120}\.)",
+                r"(shares\s+outstanding[:\s]+[0-9,.]+[KMBT]?)",
+                r"(authorized\s+shares[:\s]+[0-9,.]+[KMBT]?)",
+                r"(dilution\s+risk[^.]{5,80}\.)",
+                r"(S-3\s+filing[^.]{5,80}\.)",
+            ]
+
+            snippets: List[str] = []
+            for pattern in dilution_patterns:
+                matches = re.findall(pattern, text, re.IGNORECASE)
+                for match in matches[:2]:
+                    cleaned = match.strip()
+                    if len(cleaned) > 15 and cleaned not in snippets:
+                        snippets.append(cleaned)
+
+            if snippets:
+                result["dilutionInfo"] = " | ".join(snippets[:3])
+                result["ok"] = True
+            else:
+                result["error"] = "No dilution data found (may require subscription)"
+                result["note"] = "DilutionTracker may require a paid subscription for full data."
+
+    except Exception as e:
+        logger.exception("dilutiontracker scrape failed", extra={"symbol": symbol})
+        result["error"] = f"Exception {type(e).__name__}"
+
+    PROFILE_CACHE[cache_key] = result
+    return result
 
 
 def fetch_intraday_1m(symbol: str, day: str) -> Dict[str, Any]:
@@ -702,7 +961,8 @@ def ticker_profile(symbol: str = Query(...)):
     ktf = fetch_knowthefloat(sym)
     dil = fetch_dilutiontracker(sym)
 
-    finviz = fetch_finviz_short_interest(sym)
+    finviz = fetch_finviz_profile(sym)
+    finviz_ok = bool(finviz and finviz.get("ok"))
 
     ebitda_source = "yahoo" if yahoo.get("ebitda") is not None else None
     ebitda_value = yahoo.get("ebitda")
@@ -710,7 +970,7 @@ def ticker_profile(symbol: str = Query(...)):
         ebitda_value = poly_fin.get("ebitda")
         ebitda_source = "polygon"
     if ebitda_value is None:
-        gf = fetch_google_finance_ebitda(sym, yahoo.get("exchange") or (polygon.get("exchange") if poly_ok else None))
+        gf = fetch_google_finance_ebitda(sym, yahoo.get("exchange") or (finviz.get("exchange") if finviz_ok else None) or (polygon.get("exchange") if poly_ok else None))
         if gf.get("ok"):
             ebitda_value = gf.get("ebitda")
             ebitda_source = "google"
@@ -718,6 +978,12 @@ def ticker_profile(symbol: str = Query(...)):
             gf = gf
     else:
         gf = {"ok": False, "error": "not used"}
+    # Last resort: Finviz snapshot table (only if EBITDA label exists in table)
+    if ebitda_value is None:
+        fv_ebitda = fetch_finviz_ebitda(sym)
+        if fv_ebitda is not None:
+            ebitda_value = fv_ebitda
+            ebitda_source = "finviz"
 
     logger.info(
         "ebitda chosen",
@@ -726,26 +992,26 @@ def ticker_profile(symbol: str = Query(...)):
 
     merged = {
         **yahoo,
-        # Prefer Polygon for missing Yahoo fields
-        "exchange": yahoo.get("exchange") or (polygon.get("exchange") if poly_ok else None),
-        "sector": yahoo.get("sector") or (polygon.get("sector") if poly_ok else None),
-        "industry": yahoo.get("industry") or (polygon.get("industry") if poly_ok else None),
+        # Priority: Yahoo → Finviz → Polygon
+        "exchange": yahoo.get("exchange") or (finviz.get("exchange") if finviz_ok else None) or (polygon.get("exchange") if poly_ok else None),
+        "sector": yahoo.get("sector") or (finviz.get("sector") if finviz_ok else None) or (polygon.get("sector") if poly_ok else None),
+        "industry": yahoo.get("industry") or (finviz.get("industry") if finviz_ok else None) or (polygon.get("industry") if poly_ok else None),
         "employees": yahoo.get("employees") or (polygon.get("employees") if poly_ok else None),
-        "country": yahoo.get("country") or (polygon.get("country") if poly_ok else None),
-        "marketCap": yahoo.get("marketCap") or (polygon.get("marketCap") if poly_ok else None),
+        "country": yahoo.get("country") or (finviz.get("country") if finviz_ok else None) or (polygon.get("country") if poly_ok else None),
+        "marketCap": yahoo.get("marketCap") or (finviz.get("marketCap") if finviz_ok else None) or (polygon.get("marketCap") if poly_ok else None),
         "ebitda": ebitda_value,
-        # Float: exclusively from KnowTheFloat as requested.
-        "float": ktf.get("float"),
-        # Short interest: exclusively from Finviz as requested.
-        "shortInterestPercent": finviz.get("shortInterestPercent") if finviz.get("ok") else None,
+        # Float: Finviz (primary) → KnowTheFloat (fallback)
+        "float": (finviz.get("float") if finviz_ok else None) or ktf.get("float"),
+        # Short interest: Finviz
+        "shortInterestPercent": (finviz.get("shortInterestPercent") if finviz_ok else None),
         "dilutionInfo": dil.get("dilutionInfo"),
         "sources": {
             "yahoo": bool(yahoo.get("yahooOk", True)),
             "polygon": poly_ok,
             "polygonFinancials": poly_fin_ok,
             "googleFinance": bool(ebitda_source == "google"),
+            "finviz": finviz_ok,
             "knowTheFloat": bool(ktf.get("ok")),
-            "finviz": bool(finviz.get("ok")),
             "dilutionTracker": bool(dil.get("ok")),
         },
         "errors": {
@@ -753,16 +1019,17 @@ def ticker_profile(symbol: str = Query(...)):
             "polygon": None if poly_ok else (polygon.get("error") if polygon else None),
             "polygonFinancials": None if poly_fin_ok else (poly_fin.get("error") if poly_fin else None),
             "googleFinance": None if ebitda_source == "google" else (gf.get("error") if isinstance(gf, dict) else None),
+            "finviz": None if finviz_ok else finviz.get("error"),
             "knowTheFloat": None if ktf.get("ok") else (ktf.get("error") or "KnowTheFloat unavailable"),
-            "finviz": None if finviz.get("ok") else finviz.get("error"),
-            "dilutionTracker": None if dil.get("ok") else dil.get("note"),
+            "dilutionTracker": None if dil.get("ok") else (dil.get("error") or dil.get("note")),
         },
         "sourceUrls": {
+            "finviz": finviz.get("sourceUrl"),
             "knowTheFloat": ktf.get("sourceUrl"),
             "polygon": polygon.get("sourceUrl") if poly_ok else None,
             "polygonFinancials": poly_fin.get("sourceUrl") if isinstance(poly_fin, dict) else None,
             "googleFinance": gf.get("sourceUrl") if isinstance(gf, dict) else None,
-            "finviz": finviz.get("sourceUrl"),
+            "dilutionTracker": dil.get("sourceUrl"),
         },
     }
 
@@ -790,12 +1057,84 @@ def ticker_profile(symbol: str = Query(...)):
 def ticker_news(symbol: str = Query(...)):
     sym = _clean_symbol(symbol)
     logger.info("ticker_news request", extra={"symbol": sym})
-    news = fetch_polygon_news(sym)
+
+    today = datetime.utcnow().date()
+    cutoff = today - timedelta(days=3)
+
+    # --- Source 1: Polygon news ---
+    polygon_data = fetch_polygon_news(sym)
+    polygon_items = polygon_data.get("items", []) if polygon_data.get("ok") else []
+
+    # --- Source 2: Finviz news (already date-filtered to 3 days) ---
+    finviz_items = fetch_finviz_news(sym)
+
+    # --- Merge & normalise ---
+    all_items: List[Dict[str, Any]] = []
+
+    for it in polygon_items:
+        pub = it.get("publishedAt")
+        pub_date = None
+        if pub:
+            try:
+                pub_date = datetime.fromisoformat(pub.replace("Z", "+00:00")).date()
+            except Exception:
+                try:
+                    pub_date = datetime.strptime(pub[:10], "%Y-%m-%d").date()
+                except Exception:
+                    pass
+        if pub_date and pub_date < cutoff:
+            continue
+        all_items.append({
+            "title": it.get("title"),
+            "description": it.get("description"),
+            "url": it.get("url"),
+            "publishedAt": it.get("publishedAt"),
+            "source": it.get("source") or "Polygon",
+        })
+
+    for it in finviz_items:
+        all_items.append({
+            "title": it.get("title"),
+            "description": it.get("description"),
+            "url": it.get("url"),
+            "publishedAt": it.get("publishedAt"),
+            "source": it.get("source") or "Finviz",
+        })
+
+    # --- Deduplicate by title ---
+    seen_titles: set = set()
+    unique_items: List[Dict[str, Any]] = []
+    for it in all_items:
+        title_key = (it.get("title") or "").lower().strip()[:60]
+        if title_key and title_key in seen_titles:
+            continue
+        seen_titles.add(title_key)
+        unique_items.append(it)
+
+    # --- Sort by date descending ---
+    unique_items.sort(key=lambda x: x.get("publishedAt") or "", reverse=True)
+    unique_items = unique_items[:20]
+
+    sources_found = sorted(set(it.get("source", "") for it in unique_items if it.get("source")))
+
     logger.info(
-        "ticker_news fetched",
-        extra={"symbol": sym, "ok": bool(news.get("ok")), "items": len(news.get("items", []))},
+        "ticker_news merged",
+        extra={
+            "symbol": sym,
+            "polygon_count": len(polygon_items),
+            "finviz_count": len(finviz_items),
+            "merged_count": len(unique_items),
+            "sources": sources_found,
+        },
     )
-    return {"symbol": sym, **news}
+
+    return {
+        "symbol": sym,
+        "ok": len(unique_items) > 0,
+        "items": unique_items,
+        "sources": sources_found,
+        "error": None if unique_items else "No recent news found (last 3 days)",
+    }
 
 
 @app.get("/ticker/intraday")

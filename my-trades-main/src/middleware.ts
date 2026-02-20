@@ -3,11 +3,11 @@ import { NextRequest, NextResponse } from 'next/server';
 type SessionUser = {
   id: string;
   email: string;
-  role: 'ADMIN' | 'TRADER';
+  role: 'ADMIN' | 'TRADER' | 'MENTOR' | 'STUDENT';
 };
 
 const authCookieName = 'mt_session';
-const privatePrefixes = ['/dashboard', '/trades', '/reports', '/api/dashboard', '/api/reports', '/api/upload', '/api/strategies', '/api/trades', '/api/fills', '/api/setups'];
+const privatePrefixes = ['/dashboard', '/trades', '/reports', '/community', '/mentor', '/admin', '/api/dashboard', '/api/reports', '/api/upload', '/api/strategies', '/api/trades', '/api/fills', '/api/setups', '/api/community', '/api/mentor', '/api/admin', '/api/users'];
 
 function isPrivatePath(pathname: string) {
   return privatePrefixes.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
@@ -103,13 +103,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl);
   }
 
-  if (pathname.startsWith('/api/strategies') && request.method !== 'GET' && user.role !== 'ADMIN') {
-    return NextResponse.json({ error: 'Permisos insuficientes' }, { status: 403 });
-  }
+  // Role-based authorization is handled by each API route using
+  // requireRequestUserWithFreshRole() which reads the current role from DB.
+  // This ensures admin role changes take effect immediately without re-login.
+  // The middleware only verifies authentication (valid session token).
 
   return NextResponse.next();
 }
 
 export const config = {
-  matcher: ['/dashboard/:path*', '/trades/:path*', '/reports/:path*', '/api/dashboard/:path*', '/api/reports/:path*', '/api/upload/:path*', '/api/strategies/:path*', '/api/trades/:path*', '/api/fills/:path*', '/api/setups/:path*'],
+  matcher: ['/dashboard/:path*', '/trades/:path*', '/reports/:path*', '/community/:path*', '/mentor/:path*', '/admin/:path*', '/api/dashboard/:path*', '/api/reports/:path*', '/api/upload/:path*', '/api/strategies/:path*', '/api/trades/:path*', '/api/fills/:path*', '/api/setups/:path*', '/api/community/:path*', '/api/mentor/:path*', '/api/admin/:path*', '/api/users/:path*'],
 };

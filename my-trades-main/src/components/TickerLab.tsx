@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { JournalChart, JournalCandle, JournalTrade } from '@/components/JournalChart';
+import { useCallback, useEffect, useState } from 'react';
+import { TickerChart, TickerCandle } from '@/components/TickerChart';
 
 type Profile = {
   symbol: string;
@@ -63,19 +63,13 @@ export function TickerLab({ initialSymbol = 'AAPL' }: { initialSymbol?: string }
   const [ticker, setTicker] = useState(initial);
   const [inputValue, setInputValue] = useState(initial);
 
-  const [selected, setSelected] = useState<{ date: string; symbol: string } | null>(null);
-
-  const [chartDate, setChartDate] = useState<string>(() => {
-    const now = new Date();
-    return now.toISOString().slice(0, 10);
-  });
+  const INTERVALS = ['1m', '5m', '15m', '1h', '1d'] as const;
+  const [chartInterval, setChartInterval] = useState<string>('5m');
+  const [chartCandles, setChartCandles] = useState<TickerCandle[]>([]);
+  const [chartLoading, setChartLoading] = useState(false);
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [gaps, setGaps] = useState<GapStats | null>(null);
-  const [candles, setCandles] = useState<JournalCandle[]>([]);
-  const [trades, setTrades] = useState<JournalTrade[]>([]);
-
-  const [useTradingViewFallback, setUseTradingViewFallback] = useState(false);
 
   const [news, setNews] = useState<NewsItem[]>([]);
   const [newsLoading, setNewsLoading] = useState(false);
@@ -102,46 +96,15 @@ export function TickerLab({ initialSymbol = 'AAPL' }: { initialSymbol?: string }
     }
   }
 
-  const resolveDefaultDateForTicker = useCallback(async (symbol: string) => {
-    try {
-      const res = await fetch(
-        `/api/dashboard/last-trade-date?symbol=${encodeURIComponent(symbol.toUpperCase())}`,
-        { cache: 'no-store' },
-      );
-      const data = await readJsonSafe(res);
-      if (!res.ok) return null;
-      return typeof data.date === 'string' && data.date ? data.date : null;
-    } catch {
-      return null;
-    }
-  }, []);
-
-  const refreshAll = useCallback(async (symbol: string, date?: string) => {
+  const refreshProfile = useCallback(async (symbol: string) => {
     const sym = symbol.toUpperCase();
-
     setError(null);
     setLoading(true);
-    setUseTradingViewFallback(false);
 
     try {
-      const chosenDate = date ?? chartDate;
-
-      const profileReq = fetch(`/api/ticker-lab/profile?symbol=${encodeURIComponent(sym)}`, { cache: 'no-store' });
-      const gapsReq = fetch(`/api/ticker-lab/gaps?symbol=${encodeURIComponent(sym)}&months=9&gapThreshold=24`, { cache: 'no-store' });
-
-      const intradayReq = chosenDate
-        ? fetch(`/api/yahoo/intraday?symbol=${encodeURIComponent(sym)}&date=${encodeURIComponent(chosenDate)}`, { cache: 'no-store' })
-        : null;
-
-      const tradesReq = chosenDate
-        ? fetch(`/api/dashboard/trades?symbol=${encodeURIComponent(sym)}&date=${encodeURIComponent(chosenDate)}`, { cache: 'no-store' })
-        : null;
-
-      const [profileRes, gapsRes, intradayRes, tradesRes] = await Promise.all([
-        profileReq,
-        gapsReq,
-        intradayReq,
-        tradesReq,
+      const [profileRes, gapsRes] = await Promise.all([
+        fetch(`/api/ticker-lab/profile?symbol=${encodeURIComponent(sym)}`, { cache: 'no-store' }),
+        fetch(`/api/ticker-lab/gaps?symbol=${encodeURIComponent(sym)}&months=9&gapThreshold=24`, { cache: 'no-store' }),
       ]);
 
       const [profileJson, gapsJson] = await Promise.all([
@@ -158,69 +121,36 @@ export function TickerLab({ initialSymbol = 'AAPL' }: { initialSymbol?: string }
 
       setProfile(profileRes.ok ? profileJson : null);
       setGaps(gapsRes.ok ? gapsJson : null);
-
-      if (intradayRes && tradesRes) {
-        const [intradayJson, tradesJson] = await Promise.all([
-          readJsonSafe(intradayRes),
-          readJsonSafe(tradesRes),
-        ]);
-
-        if (!tradesRes.ok) {
-          console.error('TickerLab trades fetch failed', { status: tradesRes.status, body: tradesJson });
-          throw new Error('No data available for this ticker.');
-        }
-
-        if (!intradayRes.ok) {
-          console.error('TickerLab intraday fetch failed', { status: intradayRes.status, body: intradayJson });
-          // Still show executions using synthetic candles.
-          setCandles([]);
-          setTrades(tradesJson.trades ?? []);
-          setUseTradingViewFallback(false);
-          return;
-        }
-
-        const nextCandles = intradayJson.candles ?? [];
-        setCandles(nextCandles);
-        setTrades(tradesJson.trades ?? []);
-        // Even if candles are empty, JournalChart can render executions with synthetic candles.
-        setUseTradingViewFallback(false);
-      } else {
-        setCandles([]);
-        setTrades([]);
-        setUseTradingViewFallback(false);
-      }
     } catch (e) {
-      // Do not expose technical errors to the UI.
-      console.error('TickerLab refreshAll failed', e);
+      console.error('TickerLab refreshProfile failed', e);
       setError('No data available for this ticker.');
-      setUseTradingViewFallback(false);
     } finally {
       setLoading(false);
     }
-  }, [chartDate]);
+  }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      const nextDate = await resolveDefaultDateForTicker(ticker);
-      if (cancelled) return;
-      if (nextDate && nextDate !== chartDate) {
-        setChartDate(nextDate);
-        setSelected({ symbol: ticker.toUpperCase(), date: nextDate });
-        await refreshAll(ticker.toUpperCase(), nextDate);
-      } else {
-        await refreshAll(ticker);
+  const refreshChart = useCallback(async (symbol: string, interval: string) => {
+    const sym = symbol.toUpperCase();
+    setChartLoading(true);
+    try {
+      const res = await fetch(
+        `/api/ticker-lab/chart?symbol=${encodeURIComponent(sym)}&interval=${encodeURIComponent(interval)}`,
+        { cache: 'no-store' },
+      );
+      const data = await readJsonSafe(res);
+      if (!res.ok) {
+        console.error('TickerLab chart fetch failed', { status: res.status, body: data });
+        setChartCandles([]);
+        return;
       }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [ticker, refreshAll, resolveDefaultDateForTicker]);
-
-  useEffect(() => {
-    setSelected({ symbol: ticker.toUpperCase(), date: chartDate });
-    void refreshAll(ticker.toUpperCase(), chartDate);
-  }, [chartDate, refreshAll, ticker]);
+      setChartCandles(Array.isArray(data.candles) ? data.candles : []);
+    } catch (e) {
+      console.error('TickerLab refreshChart failed', e);
+      setChartCandles([]);
+    } finally {
+      setChartLoading(false);
+    }
+  }, []);
 
   const refreshNews = useCallback(async (symbol: string) => {
     const sym = symbol.toUpperCase();
@@ -243,8 +173,10 @@ export function TickerLab({ initialSymbol = 'AAPL' }: { initialSymbol?: string }
   }, []);
 
   useEffect(() => {
+    void refreshProfile(ticker);
+    void refreshChart(ticker, chartInterval);
     void refreshNews(ticker);
-  }, [refreshNews, ticker]);
+  }, [ticker, refreshProfile, refreshChart, refreshNews, chartInterval]);
 
   const onSubmit = useCallback(
     (e: React.FormEvent) => {
@@ -255,11 +187,6 @@ export function TickerLab({ initialSymbol = 'AAPL' }: { initialSymbol?: string }
     },
     [inputValue],
   );
-
-  const selectedTitle = useMemo(() => {
-    if (!selected) return null;
-    return `${selected.symbol} · ${selected.date}`;
-  }, [selected]);
 
   return (
     <div className="space-y-6">
@@ -305,11 +232,9 @@ export function TickerLab({ initialSymbol = 'AAPL' }: { initialSymbol?: string }
               {profile.exchange === null &&
                 profile.sector === null &&
                 profile.industry === null &&
-                profile.employees === null &&
                 profile.country === null &&
                 profile.marketCap === null &&
                 profile.float === null &&
-                profile.dilutionInfo === null &&
                 profile.ebitda === null &&
                 profile.shortInterestPercent === null && (
                   <div className="rounded-lg border border-slate-800 bg-slate-950/40 p-3 text-sm text-slate-300">
@@ -321,17 +246,30 @@ export function TickerLab({ initialSymbol = 'AAPL' }: { initialSymbol?: string }
                 <Row label="Exchange" value={profile.exchange ?? 'N/A'} />
                 <Row label="Sector" value={profile.sector ?? 'N/A'} />
                 <Row label="Industry" value={profile.industry ?? 'N/A'} />
-                <Row label="Employees" value={formatLargeNumber(profile.employees ?? null)} />
                 <Row label="Country" value={profile.country ?? 'N/A'} />
                 <Row label="Market Cap" value={formatLargeNumber(profile.marketCap ?? null)} />
                 <Row label="Float" value={formatLargeNumber(profile.float ?? null)} />
-                <Row label="Dilution" value={profile.dilutionInfo ?? 'N/A'} />
                 <Row label="EBITDA" value={formatLargeNumber(profile.ebitda ?? null)} />
                 <Row
                   label="Short interest %"
                   value={profile.shortInterestPercent ? `${profile.shortInterestPercent.toFixed(2)}%` : 'N/A'}
                 />
               </div>
+
+              {profile.sources && (
+                <div className="flex flex-wrap gap-1.5 pt-1">
+                  {Object.entries(profile.sources).map(([src, ok]) => (
+                    <span
+                      key={src}
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
+                        ok ? 'bg-emerald-500/20 text-emerald-300' : 'bg-slate-800 text-slate-500'
+                      }`}
+                    >
+                      {src}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
@@ -353,50 +291,35 @@ export function TickerLab({ initialSymbol = 'AAPL' }: { initialSymbol?: string }
 
         <section className="panel p-5 xl:col-span-2">
           <div className="mb-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <h3 className="panel-title">Gráfico intradía (Yahoo 1m) + ejecuciones</h3>
-            <div className="flex items-center gap-3">
-              <label className="text-sm text-slate-300" htmlFor="ticker-lab-date">
-                Fecha
-              </label>
-              <input
-                id="ticker-lab-date"
-                type="date"
-                value={chartDate}
-                onChange={(e) => {
-                  const nextDate = e.target.value;
-                  setChartDate(nextDate);
-                  setSelected({ symbol: ticker.toUpperCase(), date: nextDate });
-                  void refreshAll(ticker.toUpperCase(), nextDate);
-                }}
-                className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
-              />
-              {selectedTitle && <span className="text-sm text-slate-400">{selectedTitle}</span>}
+            <h3 className="panel-title">{ticker} · Gráfico</h3>
+            <div className="flex items-center gap-1.5">
+              {INTERVALS.map((iv) => (
+                <button
+                  key={iv}
+                  onClick={() => setChartInterval(iv)}
+                  className={`rounded-lg px-3 py-1.5 text-xs font-medium transition ${
+                    chartInterval === iv
+                      ? 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/40'
+                      : 'bg-slate-800/60 text-slate-400 border border-slate-700/50 hover:bg-slate-700/60 hover:text-slate-200'
+                  }`}
+                >
+                  {iv}
+                </button>
+              ))}
             </div>
           </div>
 
-          {!selected && (
-            <div className="flex h-[600px] items-center justify-center rounded-xl border border-slate-800 bg-slate-950/60">
-              <p className="text-sm text-slate-400">Selecciona una fecha para cargar el gráfico.</p>
-            </div>
-          )}
-
-          {selected && loading && (
-            <div className="flex h-[600px] items-center justify-center">
+          {chartLoading && (
+            <div className="flex h-[500px] items-center justify-center rounded-xl border border-slate-800 bg-[#0a0e1a]">
               <div className="text-center">
                 <div className="mx-auto mb-3 h-8 w-8 animate-spin rounded-full border-2 border-cyan-500 border-t-transparent" />
-                <p className="text-sm text-slate-400">Cargando datos…</p>
+                <p className="text-sm text-slate-400">Cargando gráfico…</p>
               </div>
             </div>
           )}
 
-          {selected && !loading && error && (
-            <div className="flex h-[600px] items-center justify-center rounded-xl border border-slate-800 bg-slate-950/60">
-              <p className="text-sm text-slate-300">No data available for this ticker.</p>
-            </div>
-          )}
-
-          {selected && !loading && !error && (
-            <JournalChart candles={candles} trades={trades} ticker={selected.symbol} date={selected.date} />
+          {!chartLoading && (
+            <TickerChart candles={chartCandles} ticker={ticker} interval={chartInterval} />
           )}
 
           <div className="mt-5">
@@ -414,26 +337,31 @@ export function TickerLab({ initialSymbol = 'AAPL' }: { initialSymbol?: string }
                 {news.map((item, idx) => (
                   <article key={`${item.url ?? 'news'}-${idx}`} className="rounded-xl border border-slate-800 bg-slate-950/40 p-4">
                     <div className="flex flex-col gap-1">
-                      <h4 className="text-sm font-semibold text-slate-100">{item.title ?? 'Untitled'}</h4>
-                      {(item.source || item.publishedAt) && (
+                      <div className="flex items-center gap-2">
+                        <h4 className="text-sm font-semibold text-slate-100">{item.title ?? 'Untitled'}</h4>
+                        {item.source && (
+                          <span className="shrink-0 rounded-full bg-cyan-500/15 px-2 py-0.5 text-[10px] font-medium text-cyan-300">
+                            {item.source}
+                          </span>
+                        )}
+                      </div>
+                      {item.publishedAt && (
                         <p className="text-xs text-slate-500">
-                          {item.source ? item.source : ''}
-                          {item.source && item.publishedAt ? ' · ' : ''}
-                          {item.publishedAt ? new Date(item.publishedAt).toLocaleString() : ''}
+                          {new Date(item.publishedAt).toLocaleDateString()}
                         </p>
                       )}
                     </div>
                     {item.description && (
-                      <p className="mt-2 line-clamp-4 text-sm text-slate-300">{item.description}</p>
+                      <p className="mt-2 line-clamp-3 text-sm text-slate-300">{item.description}</p>
                     )}
                     {item.url && (
                       <a
-                        className="mt-3 inline-block text-sm text-cyan-300 hover:text-cyan-200"
+                        className="mt-2 inline-block truncate text-sm text-cyan-300 hover:text-cyan-200"
                         href={item.url}
                         target="_blank"
                         rel="noreferrer"
                       >
-                        {item.url}
+                        Ver artículo
                       </a>
                     )}
                   </article>
@@ -443,13 +371,6 @@ export function TickerLab({ initialSymbol = 'AAPL' }: { initialSymbol?: string }
           </div>
         </section>
       </div>
-
-      <section className="panel p-5">
-        <h3 className="panel-title mb-2">TradingView Charting Library (opcional)</h3>
-        <p className="text-sm text-slate-400">
-          Este panel se deja como stub. La TradingView Charting Library requiere licencia y distribución privada.
-        </p>
-      </section>
     </div>
   );
 }

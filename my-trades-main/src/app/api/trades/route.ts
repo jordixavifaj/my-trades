@@ -23,6 +23,7 @@ export async function GET(request: NextRequest) {
   const to = searchParams.get('to');
 
   const where = {
+    userId: auth.id,
     symbol: symbol ? { contains: symbol, mode: 'insensitive' as const } : undefined,
     status: status === 'OPEN' || status === 'CLOSED' ? status : undefined,
     strategyId: strategyId || undefined,

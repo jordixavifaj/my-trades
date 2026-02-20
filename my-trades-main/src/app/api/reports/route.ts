@@ -73,7 +73,7 @@ function parseWhere(searchParams: URLSearchParams) {
     status: status === 'OPEN' || status === 'CLOSED' ? status : undefined,
     strategyId,
     openDate: from || to ? { gte: from ? new Date(from) : undefined, lte: to ? new Date(to) : undefined } : undefined,
-  };
+  } as Record<string, unknown>;
 }
 
 export async function GET(request: NextRequest) {
@@ -85,7 +85,7 @@ export async function GET(request: NextRequest) {
     const exportType = searchParams.get('export');
     const page = Math.max(1, Number.parseInt(searchParams.get('page') ?? '1', 10));
     const pageSize = Math.min(100, Math.max(1, Number.parseInt(searchParams.get('pageSize') ?? '20', 10)));
-    const where = parseWhere(searchParams);
+    const where = { ...parseWhere(searchParams), userId: auth.id };
 
     const [trades, total] = await Promise.all([
       prisma.trade.findMany({

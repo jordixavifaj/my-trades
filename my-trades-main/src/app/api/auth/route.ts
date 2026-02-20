@@ -81,6 +81,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Credenciales inválidas' }, { status: 401 });
     }
 
+    // If user must reset password, return a special response instead of a session
+    if (user.mustResetPassword) {
+      return NextResponse.json({
+        mustResetPassword: true,
+        resetToken: user.id,
+        message: 'Debes cambiar tu contraseña temporal.',
+      }, { status: 200 });
+    }
+
     const token = createSessionToken({ id: user.id, email: user.email, role: toSessionRole(user.role) });
     const response = NextResponse.json({ id: user.id, email: user.email, role: toSessionRole(user.role) });
     const cookie = sessionCookie(token);

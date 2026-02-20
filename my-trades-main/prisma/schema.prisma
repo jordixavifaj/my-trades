@@ -11,16 +11,61 @@ model User {
   id           String   @id @default(cuid())
   name         String?
   email        String   @unique
-  passwordHash String?
-  role         String   @default("TRADER")
-  isActive     Boolean  @default(true)
+  passwordHash      String?
+  mustResetPassword Boolean  @default(false)
+  role              String   @default("TRADER")
+  isActive          Boolean  @default(true)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
   trades       Trade[]
   importBatches ImportBatch[]
   auditLogs    AuditLog[]
+  communityMemberships CommunityMember[]
+  mentorAssignments    MentorAssignment[] @relation("MentorUser")
+  studentAssignments   MentorAssignment[] @relation("StudentUser")
 
+  @@index([role])
   @@map("users")
+}
+
+model Community {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  members     CommunityMember[]
+
+  @@map("communities")
+}
+
+model CommunityMember {
+  id          String    @id @default(cuid())
+  userId      String
+  communityId String
+  joinedAt    DateTime  @default(now())
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  community   Community @relation(fields: [communityId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, communityId])
+  @@index([communityId])
+  @@index([userId])
+  @@map("community_members")
+}
+
+model MentorAssignment {
+  id        String   @id @default(cuid())
+  mentorId  String
+  studentId String
+  createdAt DateTime @default(now())
+  mentor    User     @relation("MentorUser", fields: [mentorId], references: [id], onDelete: Cascade)
+  student   User     @relation("StudentUser", fields: [studentId], references: [id], onDelete: Cascade)
+
+  @@unique([mentorId, studentId])
+  @@index([mentorId])
+  @@index([studentId])
+  @@map("mentor_assignments")
 }
 
 model Strategy {

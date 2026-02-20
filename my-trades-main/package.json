@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "predev": "npx prisma db push --skip-generate && npm run seed",
-    "dev": "next dev",
+    "dev": "concurrently --kill-others --names next,ticker-lab --prefix-colors blue,green \"next dev\" \"python -m uvicorn main:app --host 127.0.0.1 --port 8001 --app-dir ticker-lab-backend\"",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -32,6 +32,7 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "@types/xlsx": "^0.0.35",
+    "concurrently": "^9.2.1",
     "eslint": "^8",
     "eslint-config-next": "14.2.5",
     "postcss": "^8",

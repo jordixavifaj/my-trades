@@ -40,11 +40,7 @@ function priceBucket(price: number) {
   return '20+';
 }
 
-export async function GET(request: NextRequest) {
-  const auth = requireRequestUser(request);
-  if (auth instanceof NextResponse) return auth;
-
-  const { searchParams } = new URL(request.url);
+export async function generateReportsForUser(userId: string, searchParams: URLSearchParams) {
   const from = parseIsoDateOnly(searchParams.get('from'));
   const to = parseIsoDateOnly(searchParams.get('to'));
   const setup = searchParams.get('setup')?.trim() || null;
@@ -56,7 +52,7 @@ export async function GET(request: NextRequest) {
 
   const trades = await prisma.trade.findMany({
     where: {
-      userId: auth.id,
+      userId,
       status: 'CLOSED',
       fills:
         start || end
@@ -407,7 +403,7 @@ export async function GET(request: NextRequest) {
     tradingDays,
   };
 
-  return NextResponse.json({
+  return {
     filters: { from, to, setup, ticker, tz: TZ, ecnFeePerShare: Number.isFinite(ecnFeePerShare) ? ecnFeePerShare : 0 },
     totals: {
       trades: normalizedTrades.length,
@@ -427,5 +423,14 @@ export async function GET(request: NextRequest) {
       bestPriceBucket,
       worstPriceBucket,
     },
-  });
+  };
+}
+
+export async function GET(request: NextRequest) {
+  const auth = requireRequestUser(request);
+  if (auth instanceof NextResponse) return auth;
+
+  const { searchParams } = new URL(request.url);
+  const data = await generateReportsForUser(auth.id, searchParams);
+  return NextResponse.json(data);
 }

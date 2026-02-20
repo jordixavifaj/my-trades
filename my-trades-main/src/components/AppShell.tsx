@@ -1,17 +1,40 @@
-import Link from 'next/link';
-import { ReactNode } from 'react';
+'use client';
 
-const links = [
+import Link from 'next/link';
+import { ReactNode, useEffect, useState } from 'react';
+
+type UserRole = 'ADMIN' | 'TRADER' | 'MENTOR' | 'STUDENT';
+
+type NavLink = { href: string; label: string; roles?: UserRole[] };
+
+const allLinks: NavLink[] = [
   { href: '/', label: 'Inicio' },
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/trades', label: 'Trades' },
   { href: '/reports', label: 'Reports' },
+  { href: '/community', label: 'Comunidad' },
+  { href: '/mentor', label: 'Mis Alumnos', roles: ['MENTOR', 'ADMIN'] },
+  { href: '/admin', label: 'Admin', roles: ['ADMIN'] },
   { href: '/chart/SPY', label: 'Chart Lab' },
-  { href: '/tickers-intelligence', label: 'Tickers Intelligence' },
   { href: '/auth', label: 'Auth' },
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const [role, setRole] = useState<UserRole | null>(null);
+
+  useEffect(() => {
+    fetch('/api/auth/me', { cache: 'no-store' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => { const r = data?.role ?? data?.user?.role; if (r) setRole(r as UserRole); })
+      .catch(() => {});
+  }, []);
+
+  const visibleLinks = allLinks.filter((l) => {
+    if (!l.roles) return true;
+    if (!role) return false;
+    return l.roles.includes(role);
+  });
+
   return (
     <div className="min-h-screen text-slate-100">
       <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-950/85 backdrop-blur">
@@ -25,7 +48,7 @@ export function AppShell({ children }: { children: ReactNode }) {
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {links.map(({ href, label }) => (
+            {visibleLinks.map(({ href, label }) => (
               <Link
                 key={href}
                 href={href}
@@ -34,6 +57,11 @@ export function AppShell({ children }: { children: ReactNode }) {
                 {label}
               </Link>
             ))}
+            {role && (
+              <span className="ml-2 rounded-full bg-slate-800 px-2.5 py-0.5 text-[10px] font-medium text-slate-400">
+                {role}
+              </span>
+            )}
           </div>
         </nav>
       </header>
