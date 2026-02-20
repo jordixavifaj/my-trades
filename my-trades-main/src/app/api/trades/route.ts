@@ -56,6 +56,8 @@ export async function POST(request: NextRequest) {
       side: body.side,
       pnl: body.pnl !== undefined ? Number(body.pnl) : null,
       commission: Number(body.commission ?? 0),
+      setupName: body.setupName ? String(body.setupName) : null,
+      setupSource: body.setupName ? String(body.setupSource ?? 'MANUAL') : null,
       notes: body.notes ?? null,
     },
   });

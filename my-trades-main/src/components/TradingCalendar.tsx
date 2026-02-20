@@ -21,7 +21,15 @@ type StockSummary = {
   trades: CalendarTrade[];
 };
 
-export function TradingCalendar({ days, tradesByDay }: { days: Array<{ date: string; pnl: number }>; tradesByDay: Record<string, CalendarTrade[]> }) {
+export function TradingCalendar({
+  days,
+  tradesByDay,
+  onSymbolSelected,
+}: {
+  days: Array<{ date: string; pnl: number }>;
+  tradesByDay: Record<string, CalendarTrade[]>;
+  onSymbolSelected?: (payload: { date: string; symbol: string }) => void | Promise<void>;
+}) {
   const router = useRouter();
   const [cursor, setCursor] = useState(() => new Date());
   const [selectedDay, setSelectedDay] = useState<string | null>(null);
@@ -53,6 +61,11 @@ export function TradingCalendar({ days, tradesByDay }: { days: Array<{ date: str
   }, [selectedDay, tradesByDay]);
 
   const handleSymbolClick = (symbol: string) => {
+    if (selectedDay && onSymbolSelected) {
+      void onSymbolSelected({ date: selectedDay, symbol: symbol.toUpperCase() });
+      return;
+    }
+
     router.push(`/chart?symbol=${encodeURIComponent(symbol.toUpperCase())}`);
   };
 
@@ -129,7 +142,9 @@ export function TradingCalendar({ days, tradesByDay }: { days: Array<{ date: str
             {item.inMonth && (
               <>
                 <p className="text-xs text-slate-300">{item.day}</p>
-                <p className={`mt-1 text-xs font-medium ${item.pnl >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>{item.pnl.toFixed(0)}</p>
+                <p className={`mt-1 text-xs font-medium ${item.pnl >= 0 ? 'text-emerald-300' : 'text-rose-300'}`}>
+                  {(item.pnl >= 0 ? '+' : '') + item.pnl.toFixed(0)}$
+                </p>
                 <p className="text-[10px] text-slate-400">{item.trades} trades</p>
               </>
             )}
@@ -148,7 +163,7 @@ export function TradingCalendar({ days, tradesByDay }: { days: Array<{ date: str
             >
               <div className="flex-1">
                 <div className="flex items-center gap-2">
-                  <button className="font-medium text-cyan-400 hover:text-cyan-300 transition-colors">
+                  <button type="button" className="font-medium text-cyan-400 hover:text-cyan-300 transition-colors">
                     {summary.symbol}
                   </button>
                   <span className="text-xs text-slate-400">

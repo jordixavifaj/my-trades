@@ -1,37 +1,46 @@
 import { prisma } from '@/lib/prisma';
-import { buildTradesFromExecutions, groupTradesByDay } from '@/lib/trade-builder';
-import { Execution } from '@/lib/executions-parser';
 
-export async function getDashboardMetrics() {
+export async function getDashboardMetrics(userId?: string) {
   try {
-    const fills = await prisma.fill.findMany({ orderBy: { timestamp: 'asc' } });
-    const executions: Execution[] = fills.map((fill) => ({
-      account: 'DEFAULT',
-      symbol: fill.symbol,
-      side: fill.side === 'SELL' ? 'SELL' : 'BUY',
-      quantity: fill.quantity,
-      price: fill.price,
-      timestamp: fill.timestamp,
-      commission: fill.commission,
-    }));
+    const trades = await prisma.trade.findMany({
+      where: {
+        status: 'CLOSED',
+        userId: userId ?? undefined,
+      },
+      orderBy: { closeDate: 'asc' },
+      include: { fills: true },
+    });
 
-    const trades = buildTradesFromExecutions(executions);
-    const calendarDays = groupTradesByDay(trades);
-    const totalPnl = trades.reduce((sum, trade) => sum + trade.pnl, 0);
-    const wins = trades.filter((trade) => trade.pnl > 0).length;
+    const totalPnl = trades.reduce((sum, trade) => sum + (trade.pnl ?? 0), 0);
+    const wins = trades.filter((trade) => (trade.pnl ?? 0) > 0).length;
     const losses = trades.length - wins;
     const winRate = trades.length ? (wins / trades.length) * 100 : 0;
+
+    const dayMap = new Map<string, { date: string; totalTrades: number; totalPnl: number; trades: typeof trades }>();
+    for (const trade of trades) {
+      const dt = (trade.closeDate ?? trade.openDate).toISOString().slice(0, 10);
+      const existing = dayMap.get(dt);
+      if (!existing) {
+        dayMap.set(dt, { date: dt, totalTrades: 1, totalPnl: trade.pnl ?? 0, trades: [trade] as any });
+      } else {
+        existing.totalTrades += 1;
+        existing.totalPnl += trade.pnl ?? 0;
+        (existing.trades as any).push(trade);
+      }
+    }
+
+    const calendarDays = Array.from(dayMap.values()).sort((a, b) => a.date.localeCompare(b.date));
 
     let equity = 0;
     let peak = 0;
     let maxDrawdown = 0;
     const equityCurve = trades.map((trade) => {
-      equity += trade.pnl;
+      equity += trade.pnl ?? 0;
       peak = Math.max(peak, equity);
       const drawdown = peak - equity;
       maxDrawdown = Math.max(maxDrawdown, drawdown);
       return {
-        date: trade.exitTime.toISOString().slice(0, 10),
+        date: (trade.closeDate ?? trade.openDate).toISOString().slice(0, 10),
         equity: Number(equity.toFixed(2)),
         drawdown: Number(drawdown.toFixed(2)),
       };
@@ -41,14 +50,15 @@ export async function getDashboardMetrics() {
     const tradesByDay = Object.fromEntries(
       calendarDays.map((day) => [
         day.date,
-        day.trades.map((trade) => ({
+        (day.trades as any).map((trade: any) => ({
           id: trade.id,
           symbol: trade.symbol,
-          pnl: trade.pnl,
-          side: trade.side === 'LONG' ? ('BUY' as const) : ('SELL' as const),
-          quantity: trade.size,
-          openDate: trade.entryTime.toISOString(),
-          closeDate: trade.exitTime.toISOString(),
+          pnl: trade.pnl ?? 0,
+          side: trade.side === 'BUY' ? ('BUY' as const) : ('SELL' as const),
+          quantity: trade.quantity,
+          openDate: trade.openDate.toISOString(),
+          closeDate: (trade.closeDate ?? trade.openDate).toISOString(),
+          setupName: trade.setupName ?? null,
           status: 'CLOSED' as const,
         })),
       ]),

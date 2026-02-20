@@ -1,9 +1,14 @@
 import { NextResponse } from 'next/server';
 import { getDashboardMetrics } from '@/lib/metrics';
+import { requireRequestUser } from '@/lib/request-auth';
+import type { NextRequest } from 'next/server';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
-    const data = await getDashboardMetrics();
+    const auth = requireRequestUser(request);
+    if (auth instanceof NextResponse) return auth;
+
+    const data = await getDashboardMetrics(auth.id);
     return NextResponse.json(data);
   } catch (error) {
     console.error(error);

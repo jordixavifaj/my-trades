@@ -1,6 +1,10 @@
 const { PrismaClient } = require('@prisma/client');
 const { createHash } = require('crypto');
 
+if (!process.env.DATABASE_URL) {
+  process.env.DATABASE_URL = 'file:./dev.db';
+}
+
 const prisma = new PrismaClient();
 
 async function main() {

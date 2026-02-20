@@ -1,10 +1,14 @@
 import { AppShell } from '@/components/AppShell';
-import { TradingCalendar } from '@/components/TradingCalendar';
 import { getDashboardMetrics } from '@/lib/metrics';
 import { DashboardCharts } from '@/components/DashboardCharts';
+import { DashboardJournal } from '@/components/DashboardJournal';
+import { cookies } from 'next/headers';
+import { authCookieName, verifySessionToken } from '@/lib/auth';
 
 export default async function DashboardPage() {
-  const data = await getDashboardMetrics();
+  const token = (await cookies()).get(authCookieName)?.value;
+  const user = verifySessionToken(token);
+  const data = await getDashboardMetrics(user?.id);
 
   return (
     <AppShell>
@@ -25,7 +29,7 @@ export default async function DashboardPage() {
 
       <DashboardCharts pnlTimeline={data.pnlTimeline} strategyPerformance={data.strategyPerformance} equityCurve={data.equityCurve} />
 
-      <TradingCalendar days={data.pnlTimeline} tradesByDay={data.tradesByDay} />
+      <DashboardJournal days={data.pnlTimeline} tradesByDay={data.tradesByDay} />
     </AppShell>
   );
 }

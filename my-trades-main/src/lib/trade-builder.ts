@@ -1,4 +1,5 @@
 import { Execution } from '@/lib/executions-parser';
+import { formatInTimeZone } from 'date-fns-tz';
 
 export interface Trade {
   id: string;
@@ -24,7 +25,8 @@ export function buildTradesFromExecutions(executions: Execution[]): Trade[] {
   const grouped = new Map<string, Execution[]>();
 
   for (const execution of executions) {
-    const key = `${execution.account}::${execution.symbol}`;
+    const nyDay = formatInTimeZone(execution.timestamp, 'America/New_York', 'yyyy-MM-dd');
+    const key = `${execution.account}::${execution.symbol}::${nyDay}`;
     if (!grouped.has(key)) grouped.set(key, []);
     grouped.get(key)!.push(execution);
   }
@@ -40,30 +42,38 @@ export function buildTradesFromExecutions(executions: Execution[]): Trade[] {
     let side: 'LONG' | 'SHORT' | null = null;
     let openExecutions: Execution[] = [];
     let runningCommission = 0;
+    let realizedGross = 0;
+    let totalEntryQty = 0;
+    let entryNotional = 0;
+    let totalExitQty = 0;
+    let exitNotional = 0;
     let tradeSequence = 1;
 
-    const flushClose = (closingExecution: Execution, closeQty: number, closePrice: number, closeCommission: number) => {
-      if (!side || !entryTime || closeQty <= 0) return;
-      const gross = side === 'LONG' ? (closePrice - avgEntryPrice) * closeQty : (avgEntryPrice - closePrice) * closeQty;
-      const pnl = gross - closeCommission;
+    const flushClose = (closingExecution: Execution) => {
+      if (!side || !entryTime) return;
+      const pnl = realizedGross - runningCommission;
+      const entryPrice = totalEntryQty > 0 ? entryNotional / totalEntryQty : avgEntryPrice;
+      const exitPrice = totalExitQty > 0 ? exitNotional / totalExitQty : closingExecution.price;
       trades.push({
         id: `${key}-${tradeSequence}`,
         symbol: closingExecution.symbol,
         side,
-        size: closeQty,
-        entryPrice: avgEntryPrice,
-        exitPrice: closePrice,
+        size: totalExitQty > 0 ? totalExitQty : Math.abs(positionSize),
+        entryPrice,
+        exitPrice,
         entryTime,
         exitTime: closingExecution.timestamp,
         pnl,
-        executions: [...openExecutions, { ...closingExecution, quantity: closeQty, commission: closeCommission }],
+        executions: openExecutions.slice(),
       });
       tradeSequence += 1;
     };
 
     for (const execution of symbolExecutions) {
+      const execSide = execution.side;
+
       let remainingQty = execution.quantity;
-      const signedQty = execution.side === 'BUY' ? execution.quantity : -execution.quantity;
+      const signedQty = execSide === 'BUY' ? execution.quantity : -execution.quantity;
       const executionSign = Math.sign(signedQty);
 
       if (positionSize === 0) {
@@ -73,6 +83,11 @@ export function buildTradesFromExecutions(executions: Execution[]): Trade[] {
         side = positionSize > 0 ? 'LONG' : 'SHORT';
         openExecutions = [execution];
         runningCommission = execution.commission;
+        realizedGross = 0;
+        totalEntryQty = execution.quantity;
+        entryNotional = execution.price * execution.quantity;
+        totalExitQty = 0;
+        exitNotional = 0;
         continue;
       }
 
@@ -83,39 +98,55 @@ export function buildTradesFromExecutions(executions: Execution[]): Trade[] {
         positionSize += signedQty;
         openExecutions.push(execution);
         runningCommission += execution.commission;
+        totalEntryQty += remainingQty;
+        entryNotional += execution.price * remainingQty;
         continue;
       }
 
       const closeQty = Math.min(Math.abs(positionSize), remainingQty);
       const commissionPerUnit = execution.commission / execution.quantity;
-      const closeCommission = runningCommission + commissionPerUnit * closeQty;
-      flushClose(execution, closeQty, execution.price, closeCommission);
+      const closeCommission = commissionPerUnit * closeQty;
+      const gross = side === 'LONG' ? (execution.price - avgEntryPrice) * closeQty : (avgEntryPrice - execution.price) * closeQty;
+      realizedGross += gross;
+      runningCommission += closeCommission;
+      totalExitQty += closeQty;
+      exitNotional += execution.price * closeQty;
+      openExecutions.push({ ...execution, quantity: closeQty, commission: closeCommission });
 
       const afterClose = Math.abs(positionSize) - closeQty;
       const leftoverQty = remainingQty - closeQty;
 
       if (afterClose > 0) {
         positionSize = Math.sign(positionSize) * afterClose;
-        runningCommission = 0;
-        openExecutions = [];
-        entryTime = execution.timestamp;
       } else {
+        positionSize = 0;
+        flushClose(execution);
         positionSize = 0;
         avgEntryPrice = 0;
         entryTime = null;
         side = null;
         openExecutions = [];
         runningCommission = 0;
+        realizedGross = 0;
+        totalEntryQty = 0;
+        entryNotional = 0;
+        totalExitQty = 0;
+        exitNotional = 0;
       }
 
       if (leftoverQty > 0) {
         const openCommission = commissionPerUnit * leftoverQty;
-        positionSize = execution.side === 'BUY' ? leftoverQty : -leftoverQty;
+        positionSize = execSide === 'BUY' ? leftoverQty : -leftoverQty;
         avgEntryPrice = execution.price;
         entryTime = execution.timestamp;
         side = positionSize > 0 ? 'LONG' : 'SHORT';
         openExecutions = [{ ...execution, quantity: leftoverQty, commission: openCommission }];
         runningCommission = openCommission;
+        realizedGross = 0;
+        totalEntryQty = leftoverQty;
+        entryNotional = execution.price * leftoverQty;
+        totalExitQty = 0;
+        exitNotional = 0;
       }
     }
   }
