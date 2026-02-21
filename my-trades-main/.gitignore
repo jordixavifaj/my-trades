@@ -40,3 +40,6 @@ prisma/migrations/
 # SQLite local database
 prisma/*.db
 prisma/*.db-journal
+
+# Nested old copy
+my-trades-main/
