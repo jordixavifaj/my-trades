@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { ReactNode, useEffect, useState } from 'react';
 
 type UserRole = 'ADMIN' | 'TRADER' | 'MENTOR' | 'STUDENT';
@@ -8,7 +9,6 @@ type UserRole = 'ADMIN' | 'TRADER' | 'MENTOR' | 'STUDENT';
 type NavLink = { href: string; label: string; roles?: UserRole[] };
 
 const allLinks: NavLink[] = [
-  { href: '/', label: 'Inicio' },
   { href: '/dashboard', label: 'Dashboard' },
   { href: '/trades', label: 'Trades' },
   { href: '/reports', label: 'Reports' },
@@ -19,6 +19,7 @@ const allLinks: NavLink[] = [
 ];
 
 export function AppShell({ children }: { children: ReactNode }) {
+  const router = useRouter();
   const [role, setRole] = useState<UserRole | null>(null);
   const [checked, setChecked] = useState(false);
 
@@ -64,6 +65,16 @@ export function AppShell({ children }: { children: ReactNode }) {
               <span className="ml-2 rounded-full bg-slate-800 px-2.5 py-0.5 text-[10px] font-medium text-slate-400">
                 {role}
               </span>
+              <button
+                onClick={async () => {
+                  await fetch('/api/auth/logout', { method: 'POST' });
+                  router.push('/');
+                  router.refresh();
+                }}
+                className="ml-1 rounded-lg border border-slate-700 px-3 py-1.5 text-sm text-slate-400 transition hover:bg-slate-800 hover:text-rose-300"
+              >
+                Salir
+              </button>
             </div>
           ) : checked ? (
             <div className="flex items-center gap-3">
