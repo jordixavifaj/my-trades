@@ -24,6 +24,7 @@ type DashboardData = {
     maxDrawdown: number;
   };
   pnlTimeline: Array<{ date: string; pnl: number }>;
+  pnlByMonth?: Array<{ month: string; pnl: number }>;
   equityCurve: Array<{ date: string; equity: number; drawdown: number }>;
   strategyPerformance: Array<{ name: string; trades: number; pnl: number }>;
   tradesByDay: Record<string, CalendarTrade[]>;
@@ -114,6 +115,7 @@ export function UserDashboardView({
           pnlTimeline={data.pnlTimeline}
           strategyPerformance={data.strategyPerformance}
           equityCurve={data.equityCurve}
+          pnlByMonth={data.pnlByMonth ?? []}
         />
       )}
 

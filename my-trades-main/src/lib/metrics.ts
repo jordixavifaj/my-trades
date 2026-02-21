@@ -46,6 +46,16 @@ export async function getDashboardMetrics(userId?: string) {
       };
     });
 
+    // Monthly PnL
+    const monthMap = new Map<string, number>();
+    for (const trade of trades) {
+      const dt = (trade.closeDate ?? trade.openDate).toISOString().slice(0, 7); // YYYY-MM
+      monthMap.set(dt, (monthMap.get(dt) ?? 0) + (trade.pnl ?? 0));
+    }
+    const pnlByMonth = Array.from(monthMap.entries())
+      .map(([month, pnl]) => ({ month, pnl: Number(pnl.toFixed(2)) }))
+      .sort((a, b) => a.month.localeCompare(b.month));
+
     const strategyPerformance = [{ name: 'XLS', trades: trades.length, pnl: Number(totalPnl.toFixed(2)) }];
     const tradesByDay = Object.fromEntries(
       calendarDays.map((day) => [
@@ -76,7 +86,7 @@ export async function getDashboardMetrics(userId?: string) {
         maxDrawdown: Number(maxDrawdown.toFixed(2)),
       },
       pnlTimeline: calendarDays.map((day) => ({ date: day.date, pnl: Number(day.totalPnl.toFixed(2)) })),
-      pnlByMonth: [],
+      pnlByMonth,
       equityCurve,
       strategyPerformance,
       recentTrades: trades.slice(-10).reverse(),

@@ -27,7 +27,7 @@ export default async function DashboardPage() {
         <StatCard label="Max Drawdown" value={`$${data.summary.maxDrawdown.toFixed(2)}`} positive={false} />
       </div>
 
-      <DashboardCharts pnlTimeline={data.pnlTimeline} strategyPerformance={data.strategyPerformance} equityCurve={data.equityCurve} />
+      <DashboardCharts pnlTimeline={data.pnlTimeline} strategyPerformance={data.strategyPerformance} equityCurve={data.equityCurve} pnlByMonth={data.pnlByMonth} />
 
       <DashboardJournal days={data.pnlTimeline} tradesByDay={data.tradesByDay} />
     </AppShell>
