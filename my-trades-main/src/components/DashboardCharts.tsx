@@ -121,7 +121,7 @@ export function DashboardCharts({
                 />
                 <ReferenceLine y={0} stroke="#475569" strokeDasharray="4 4" />
                 <Area
-                  type="stepAfter"
+                  type="monotone"
                   dataKey="equity"
                   stroke={currentEquity >= 0 ? '#34d399' : '#fb7185'}
                   strokeWidth={2}

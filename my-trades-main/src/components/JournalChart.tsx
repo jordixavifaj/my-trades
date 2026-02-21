@@ -268,9 +268,9 @@ export function JournalChart({ candles, trades, ticker, date }: JournalChartProp
           time: m.minuteTime as Time,
           position: 'atPriceMiddle' as const,
           price: m.price,
-          color: m.side === 'BUY' ? '#39ff14' : '#991b1b',
+          color: m.side === 'BUY' ? '#39ff14' : '#ff073a',
           shape: (m.side === 'BUY' ? 'arrowUp' : 'arrowDown') as 'arrowUp' | 'arrowDown',
-          size: 0.5,
+          size: 0.8,
           text: '',
         }));
 
@@ -408,10 +408,10 @@ export function JournalChart({ candles, trades, ticker, date }: JournalChartProp
         {trades.length > 0 && (
           <div className="flex items-center gap-4 text-xs text-slate-400">
             <span className="flex items-center gap-1">
-              <span className="inline-block h-0 w-0 border-b-[6px] border-l-[5px] border-r-[5px] border-l-transparent border-r-transparent" style={{ borderBottomColor: '#00ff00' }} /> Buy
+              <span className="inline-block h-0 w-0 border-b-[6px] border-l-[5px] border-r-[5px] border-l-transparent border-r-transparent" style={{ borderBottomColor: '#39ff14' }} /> Buy
             </span>
             <span className="flex items-center gap-1">
-              <span className="inline-block h-0 w-0 border-t-[6px] border-l-[5px] border-r-[5px] border-l-transparent border-r-transparent" style={{ borderTopColor: '#ff0000' }} /> Sell
+              <span className="inline-block h-0 w-0 border-t-[6px] border-l-[5px] border-r-[5px] border-l-transparent border-r-transparent" style={{ borderTopColor: '#ff073a' }} /> Sell
             </span>
           </div>
         )}
