@@ -27,10 +27,23 @@ type AssignmentItem = {
   student: { id: string; name: string | null; email: string };
 };
 
+type InviteCodeItem = {
+  id: string;
+  code: string;
+  assignedEmail: string | null;
+  used: boolean;
+  usedByEmail: string | null;
+  usedAt: string | null;
+  createdAt: string;
+  usedByUser: { id: string; name: string | null; email: string } | null;
+};
+
+type InviteStats = { total: number; used: number; available: number };
+
 const ROLES = ['ADMIN', 'TRADER', 'MENTOR', 'STUDENT'] as const;
 
 export default function AdminPage() {
-  const [tab, setTab] = useState<'users' | 'communities' | 'assignments'>('users');
+  const [tab, setTab] = useState<'users' | 'communities' | 'assignments' | 'codes'>('users');
 
   // Users
   const [users, setUsers] = useState<UserItem[]>([]);
@@ -53,6 +66,17 @@ export default function AdminPage() {
   const [assignLoading, setAssignLoading] = useState(false);
   const [newMentorEmail, setNewMentorEmail] = useState('');
   const [newStudentEmail, setNewStudentEmail] = useState('');
+
+  // Invite Codes
+  const [codes, setCodes] = useState<InviteCodeItem[]>([]);
+  const [codesLoading, setCodesLoading] = useState(false);
+  const [codeStats, setCodeStats] = useState<InviteStats>({ total: 0, used: 0, available: 0 });
+  const [codeStatusFilter, setCodeStatusFilter] = useState('');
+  const [codeSearch, setCodeSearch] = useState('');
+  const [genCount, setGenCount] = useState(1);
+  const [genEmail, setGenEmail] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [generatedCodes, setGeneratedCodes] = useState<string[] | null>(null);
 
   const [msg, setMsg] = useState<{ text: string; ok: boolean } | null>(null);
   const [resetResult, setResetResult] = useState<{ email: string; tempPassword: string } | null>(null);
@@ -95,9 +119,25 @@ export default function AdminPage() {
     finally { setAssignLoading(false); }
   }, []);
 
+  // Fetch Invite Codes
+  const fetchCodes = useCallback(async () => {
+    setCodesLoading(true);
+    try {
+      const p = new URLSearchParams();
+      if (codeStatusFilter) p.set('status', codeStatusFilter);
+      if (codeSearch) p.set('search', codeSearch);
+      const res = await fetch(`/api/admin/invite-codes?${p}`, { cache: 'no-store' });
+      const data = await res.json();
+      setCodes(data.codes ?? []);
+      if (data.stats) setCodeStats(data.stats);
+    } catch { setCodes([]); }
+    finally { setCodesLoading(false); }
+  }, [codeStatusFilter, codeSearch]);
+
   useEffect(() => { fetchUsers(); }, [fetchUsers]);
   useEffect(() => { if (tab === 'communities') fetchCommunities(); }, [tab, fetchCommunities]);
   useEffect(() => { if (tab === 'assignments') fetchAssignments(); }, [tab, fetchAssignments]);
+  useEffect(() => { if (tab === 'codes') fetchCodes(); }, [tab, fetchCodes]);
 
   // Change Role
   const changeRole = async (userId: string, role: string) => {
@@ -230,6 +270,52 @@ export default function AdminPage() {
     } catch { showMsg('Error de red', false); }
   };
 
+  // Generate Invite Codes
+  const generateCodes = async () => {
+    setGenerating(true);
+    setGeneratedCodes(null);
+    try {
+      const res = await fetch('/api/admin/invite-codes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ count: genCount, assignedEmail: genEmail || null }),
+      });
+      const data = await res.json();
+      if (!res.ok) { showMsg(data.error ?? 'Error', false); return; }
+      showMsg(`${data.count} código(s) generado(s)`, true);
+      setGeneratedCodes(data.generated);
+      fetchCodes();
+    } catch { showMsg('Error de red', false); }
+    finally { setGenerating(false); }
+  };
+
+  // Delete Invite Code
+  const deleteCode = async (id: string) => {
+    try {
+      const res = await fetch(`/api/admin/invite-codes?id=${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) { showMsg(data.error ?? 'Error', false); return; }
+      showMsg('Código eliminado', true);
+      fetchCodes();
+    } catch { showMsg('Error de red', false); }
+  };
+
+  // Export codes as CSV
+  const exportCodes = () => {
+    const header = 'Código,Email Asignado,Usado,Usado Por,Fecha Uso,Fecha Creación';
+    const rows = codes.map((c) =>
+      [c.code, c.assignedEmail ?? '', c.used ? 'Sí' : 'No', c.usedByEmail ?? '', c.usedAt ? new Date(c.usedAt).toLocaleString() : '', new Date(c.createdAt).toLocaleString()].join(',')
+    );
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `invite-codes-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <AppShell>
       <section className="mb-6">
@@ -245,13 +331,13 @@ export default function AdminPage() {
 
       {/* Tabs */}
       <div className="mb-6 flex gap-1 rounded-xl bg-slate-900/50 p-1">
-        {(['users', 'communities', 'assignments'] as const).map((t) => (
+        {(['users', 'communities', 'assignments', 'codes'] as const).map((t) => (
           <button
             key={t}
             onClick={() => setTab(t)}
             className={`flex-1 rounded-lg px-4 py-2 text-sm font-medium transition ${tab === t ? 'bg-slate-800 text-slate-100' : 'text-slate-400 hover:text-slate-200'}`}
           >
-            {t === 'users' ? 'Usuarios' : t === 'communities' ? 'Comunidades' : 'Asignaciones'}
+            {t === 'users' ? 'Usuarios' : t === 'communities' ? 'Comunidades' : t === 'assignments' ? 'Asignaciones' : 'Códigos'}
           </button>
         ))}
       </div>
@@ -524,6 +610,174 @@ export default function AdminPage() {
                         >
                           Eliminar
                         </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+      {/* Invite Codes Tab */}
+      {tab === 'codes' && (
+        <div>
+          {/* Stats */}
+          <div className="mb-4 grid grid-cols-3 gap-3">
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-center">
+              <p className="text-[10px] uppercase tracking-wider text-slate-500">Total</p>
+              <p className="text-2xl font-semibold text-slate-100">{codeStats.total}</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-center">
+              <p className="text-[10px] uppercase tracking-wider text-slate-500">Disponibles</p>
+              <p className="text-2xl font-semibold text-emerald-400">{codeStats.available}</p>
+            </div>
+            <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-4 text-center">
+              <p className="text-[10px] uppercase tracking-wider text-slate-500">Usados</p>
+              <p className="text-2xl font-semibold text-cyan-300">{codeStats.used}</p>
+            </div>
+          </div>
+
+          {/* Generate codes */}
+          <div className="mb-4 rounded-xl border border-slate-800 bg-slate-950/40 p-4">
+            <h4 className="mb-3 text-sm font-semibold text-slate-200">Generar nuevos códigos</h4>
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="mb-1 block text-xs text-slate-500">Cantidad</label>
+                <input
+                  type="number"
+                  min={1}
+                  max={100}
+                  value={genCount}
+                  onChange={(e) => setGenCount(Number(e.target.value) || 1)}
+                  className="w-20 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-cyan-500/70 focus:ring-2"
+                />
+              </div>
+              <div>
+                <label className="mb-1 block text-xs text-slate-500">Email asignado (opcional)</label>
+                <input
+                  type="email"
+                  placeholder="Dejar vacío para código general"
+                  value={genEmail}
+                  onChange={(e) => setGenEmail(e.target.value)}
+                  className="w-64 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-cyan-500/70 placeholder:text-slate-500 focus:ring-2"
+                />
+              </div>
+              <button
+                onClick={generateCodes}
+                disabled={generating}
+                className="rounded-lg border border-cyan-500/40 bg-cyan-500/10 px-4 py-2 text-sm font-medium text-cyan-300 hover:bg-cyan-500/20 disabled:opacity-60"
+              >
+                {generating ? 'Generando...' : 'Generar'}
+              </button>
+            </div>
+          </div>
+
+          {/* Generated codes modal */}
+          {generatedCodes && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+              <div className="w-full max-w-md rounded-2xl border border-slate-700 bg-slate-900 p-6 shadow-xl">
+                <h3 className="text-lg font-semibold text-slate-100">Códigos generados</h3>
+                <p className="mt-1 text-xs text-slate-400">Copia estos códigos y distribúyelos a los miembros.</p>
+                <div className="mt-3 max-h-60 overflow-y-auto rounded-lg border border-slate-700 bg-slate-950 p-3">
+                  {generatedCodes.map((c) => (
+                    <div key={c} className="flex items-center justify-between py-1">
+                      <code className="font-mono text-sm font-bold tracking-widest text-cyan-300">{c}</code>
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(c); showMsg(`${c} copiado`, true); }}
+                        className="rounded border border-slate-600 px-2 py-0.5 text-xs text-slate-400 hover:bg-slate-800"
+                      >
+                        Copiar
+                      </button>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={() => { navigator.clipboard.writeText(generatedCodes.join('\n')); showMsg('Todos los códigos copiados', true); }}
+                    className="flex-1 rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700"
+                  >
+                    Copiar todos
+                  </button>
+                  <button
+                    onClick={() => setGeneratedCodes(null)}
+                    className="flex-1 rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-slate-200 hover:bg-slate-700"
+                  >
+                    Cerrar
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Filters + Export */}
+          <div className="mb-4 flex flex-wrap items-center gap-3">
+            <input
+              placeholder="Buscar código, email…"
+              value={codeSearch}
+              onChange={(e) => setCodeSearch(e.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none ring-cyan-500/70 focus:ring-2"
+            />
+            <select
+              value={codeStatusFilter}
+              onChange={(e) => setCodeStatusFilter(e.target.value)}
+              className="rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100"
+            >
+              <option value="">Todos</option>
+              <option value="available">Disponibles</option>
+              <option value="used">Usados</option>
+            </select>
+            <button
+              onClick={exportCodes}
+              className="rounded-lg border border-slate-700 px-4 py-2 text-sm font-medium text-slate-300 hover:bg-slate-800"
+            >
+              Exportar CSV
+            </button>
+            <span className="text-xs text-slate-400">{codes.length} códigos</span>
+          </div>
+
+          {codesLoading && <p className="text-sm text-slate-400">Cargando…</p>}
+
+          {!codesLoading && codes.length === 0 && (
+            <p className="text-sm text-slate-400">No hay códigos. Genera los primeros desde arriba.</p>
+          )}
+
+          {!codesLoading && codes.length > 0 && (
+            <div className="overflow-x-auto rounded-xl border border-slate-800">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-800 bg-slate-900/60 text-left text-xs text-slate-400">
+                    <th className="px-4 py-3">Código</th>
+                    <th className="px-4 py-3">Email Asignado</th>
+                    <th className="px-4 py-3">Estado</th>
+                    <th className="px-4 py-3">Usado Por</th>
+                    <th className="px-4 py-3">Fecha Uso</th>
+                    <th className="px-4 py-3">Acciones</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {codes.map((c) => (
+                    <tr key={c.id} className="border-b border-slate-800/50 hover:bg-slate-900/30">
+                      <td className="px-4 py-2.5 font-mono font-bold tracking-wider text-cyan-300">{c.code}</td>
+                      <td className="px-4 py-2.5 text-slate-400">{c.assignedEmail ?? '—'}</td>
+                      <td className="px-4 py-2.5">
+                        {c.used ? (
+                          <span className="rounded-full bg-slate-800 px-2 py-0.5 text-xs font-medium text-slate-400">Usado</span>
+                        ) : (
+                          <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-300">Disponible</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-slate-300">{c.usedByEmail ?? '—'}</td>
+                      <td className="px-4 py-2.5 text-slate-400 text-xs">{c.usedAt ? new Date(c.usedAt).toLocaleString() : '—'}</td>
+                      <td className="px-4 py-2.5">
+                        {!c.used && (
+                          <button
+                            onClick={() => deleteCode(c.id)}
+                            className="rounded border border-rose-500/40 bg-rose-500/10 px-2 py-1 text-xs text-rose-300 hover:bg-rose-500/20"
+                          >
+                            Eliminar
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

@@ -130,6 +130,16 @@ export default function Home() {
 
             <form onSubmit={handleRegister} className="space-y-3">
               <div>
+                <label className="mb-1 block text-sm text-slate-400">Código de invitación</label>
+                <input
+                  type="text"
+                  name="inviteCode"
+                  placeholder="Ej: A1B2C3D4"
+                  required
+                  className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2.5 text-sm font-mono tracking-wider text-slate-100 uppercase outline-none ring-cyan-500/70 placeholder:text-slate-500 placeholder:normal-case placeholder:tracking-normal placeholder:font-sans focus:ring-2"
+                />
+              </div>
+              <div>
                 <label className="mb-1 block text-sm text-slate-400">Nombre</label>
                 <input
                   type="text"

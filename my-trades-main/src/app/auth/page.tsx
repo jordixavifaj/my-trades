@@ -192,6 +192,7 @@ export default function AuthPage() {
         </form>
         <form className="space-y-3 rounded-lg border border-slate-800 bg-slate-900 p-4" onSubmit={(e) => { e.preventDefault(); submit('register', '/api/auth/register', new FormData(e.currentTarget)); }}>
           <h2 className="text-xl font-semibold">Registro</h2>
+          <input className="w-full rounded bg-slate-800 p-2 font-mono uppercase tracking-wider placeholder:normal-case placeholder:tracking-normal placeholder:font-sans" type="text" name="inviteCode" placeholder="Código de invitación" required />
           <input className="w-full rounded bg-slate-800 p-2" type="text" name="name" placeholder="Nombre" />
           <input className="w-full rounded bg-slate-800 p-2" type="email" name="email" placeholder="Email" required />
           <input className="w-full rounded bg-slate-800 p-2" type="password" name="password" placeholder="Password" required minLength={6} />

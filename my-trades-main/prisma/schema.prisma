@@ -23,6 +23,7 @@ model User {
   communityMemberships CommunityMember[]
   mentorAssignments    MentorAssignment[] @relation("MentorUser")
   studentAssignments   MentorAssignment[] @relation("StudentUser")
+  usedInviteCodes      InviteCode[]
 
   @@index([role])
   @@map("users")
@@ -157,5 +158,22 @@ model AuditLog {
 
   @@index([tradeId, createdAt])
   @@map("audit_logs")
+}
+
+model InviteCode {
+  id            String    @id @default(cuid())
+  code          String    @unique
+  assignedEmail String?
+  used          Boolean   @default(false)
+  usedByUserId  String?
+  usedByEmail   String?
+  usedAt        DateTime?
+  createdAt     DateTime  @default(now())
+  usedByUser    User?     @relation(fields: [usedByUserId], references: [id], onDelete: SetNull)
+
+  @@index([code])
+  @@index([used])
+  @@index([assignedEmail])
+  @@map("invite_codes")
 }
 
