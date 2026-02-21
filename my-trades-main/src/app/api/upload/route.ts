@@ -123,8 +123,47 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({ error: 'No closed trades found in file' }, { status: 400 });
       }
 
+      // --- Trade-level dedup: skip trades that already exist for this user ---
+      const newTrades = [];
+      let skippedDuplicates = 0;
+
+      for (const trade of trades) {
+        const duplicate = await prisma.trade.findFirst({
+          where: {
+            userId: user.id,
+            symbol: trade.symbol,
+            openDate: trade.entryTime,
+            closeDate: trade.exitTime,
+            openPrice: trade.entryPrice,
+            closePrice: trade.exitPrice,
+            quantity: Math.round(trade.size),
+            side: trade.side === 'LONG' ? 'BUY' : 'SELL',
+          },
+        });
+
+        if (duplicate) {
+          skippedDuplicates++;
+        } else {
+          newTrades.push(trade);
+        }
+      }
+
+      if (newTrades.length === 0) {
+        return NextResponse.json({
+          message: `Todos los ${trades.length} trades ya existían. No se importó nada.`,
+          stats: {
+            parse: meta,
+            symbolCounts,
+            totalExecutions: executions.length,
+            totalTrades: 0,
+            skippedDuplicates,
+          },
+          deduped: true,
+        });
+      }
+
       const savedTrades = await prisma.$transaction(
-        trades.map((trade) =>
+        newTrades.map((trade) =>
           prisma.trade.create({
             data: {
               userId: user.id,
@@ -158,17 +197,20 @@ export async function POST(request: NextRequest) {
       await createAuditLog({
         userId: user.id,
         action: 'UPLOAD_TRADES',
-        reason: `Imported ${savedTrades.length} trades from ${file.name}`,
-        newValue: { fileName: file.name, fileHash, importBatchId: batch.id, trades: savedTrades.length, executions: executions.length },
+        reason: `Imported ${savedTrades.length} trades from ${file.name}` + (skippedDuplicates > 0 ? ` (${skippedDuplicates} duplicados omitidos)` : ''),
+        newValue: { fileName: file.name, fileHash, importBatchId: batch.id, trades: savedTrades.length, skippedDuplicates, executions: executions.length },
       });
 
       return NextResponse.json({
-        message: 'Archivo XLS procesado correctamente',
+        message: skippedDuplicates > 0
+          ? `Importados ${savedTrades.length} trades nuevos. ${skippedDuplicates} duplicados omitidos.`
+          : 'Archivo XLS procesado correctamente',
         stats: {
           parse: meta,
           symbolCounts,
           totalExecutions: executions.length,
           totalTrades: savedTrades.length,
+          skippedDuplicates,
         },
         trades: savedTrades,
       });

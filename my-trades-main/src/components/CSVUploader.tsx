@@ -3,16 +3,20 @@
 import { useState } from 'react';
 
 interface UploadStats {
-  totalFills: number;
+  totalFills?: number;
   totalTrades: number;
-  closedTrades: number;
-  openTrades: number;
+  closedTrades?: number;
+  openTrades?: number;
   skippedRows?: number;
+  skippedDuplicates?: number;
+  totalExecutions?: number;
 }
 
 interface UploadResponse {
+  message?: string;
   error?: string;
   stats?: UploadStats;
+  deduped?: boolean;
   validationErrors?: Array<{ line: number; reason: string }>;
 }
 
@@ -40,12 +44,17 @@ export default function CSVUploader() {
 
       const result: UploadResponse = await response.json();
 
-      if (response.ok && result.stats) {
-        const skippedText = result.stats.skippedRows ? `, ${result.stats.skippedRows} fila(s) inválidas omitidas` : '';
-        setMessage(
-          `Importación completada: ${result.stats.totalFills} fills en ${result.stats.totalTrades} trades (${result.stats.closedTrades} cerrados, ${result.stats.openTrades} abiertos${skippedText}).`,
-        );
-        setMessageType('success');
+      if (response.ok && (result.stats || result.deduped)) {
+        if (result.message) {
+          setMessage(result.message);
+        } else {
+          const skippedText = result.stats?.skippedRows ? `, ${result.stats.skippedRows} fila(s) inválidas omitidas` : '';
+          const dupText = result.stats?.skippedDuplicates ? `, ${result.stats.skippedDuplicates} duplicados omitidos` : '';
+          setMessage(
+            `Importación completada: ${result.stats?.totalExecutions ?? result.stats?.totalFills ?? 0} ejecuciones en ${result.stats?.totalTrades ?? 0} trades${skippedText}${dupText}.`,
+          );
+        }
+        setMessageType(result.deduped ? 'info' : 'success');
       } else {
         const validationHint = result.validationErrors?.[0]
           ? ` Primer error: línea ${result.validationErrors[0].line} - ${result.validationErrors[0].reason}.`
