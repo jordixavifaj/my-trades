@@ -148,7 +148,7 @@ export default function MentorPage() {
       )}
 
       {!loading && students.length > 0 && filtered.length === 0 && (
-        <p className="text-sm text-slate-400">No se encontraron alumnos con "{search}"</p>
+        <p className="text-sm text-slate-400">No se encontraron alumnos con {'"'}{search}{'"'}</p>
       )}
     </AppShell>
   );

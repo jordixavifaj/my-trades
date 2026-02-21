@@ -111,7 +111,7 @@ export default function CommunityPage() {
       )}
 
       {!loading && uniqueMembers.length > 0 && filtered.length === 0 && (
-        <p className="text-sm text-slate-400">No se encontraron miembros con "{search}"</p>
+        <p className="text-sm text-slate-400">No se encontraron miembros con {'"'}{search}{'"'}</p>
       )}
     </AppShell>
   );
